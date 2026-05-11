@@ -75,8 +75,23 @@ class EnumType(TypeDef):
 
 
 @dataclass
+class ErrorType(TypeDef):
+    variants: List[Variant] = field(default_factory=list)
+
+
+@dataclass
 class ExternType(TypeDef):
     import_str: Optional[str] = None
+
+
+@dataclass
+class Method:
+    name: str
+    path_pattern: Optional[str] = None
+    method_name: Optional[str] = None
+    param: Optional[str] = None
+    result: Optional[str] = None
+    error: Optional[str] = None
 
 
 def to_pascal_case(name: str) -> str:
@@ -101,7 +116,7 @@ def to_snake_case(name: str) -> str:
     return re.sub(r'_+', '_', name).strip('_').lower()
 
 
-def parse_yaml(stream: TextIO) -> Dict[str, TypeDef]:
+def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method]]:
     data = yaml.load(stream, Loader=yaml.SafeLoader)
 
     types = {}
@@ -168,7 +183,7 @@ def parse_yaml(stream: TextIO) -> Dict[str, TypeDef]:
                     bits = list(bits_val)
                 fields.append(Field(
                     name=f['name'],
-                    type_name=f.get('type', 'i64'),
+                    type_name=f.get('type', 'u32'),
                     bits=bits
                 ))
             types[name] = BitfieldType(name=name, fields=fields)
@@ -182,13 +197,34 @@ def parse_yaml(stream: TextIO) -> Dict[str, TypeDef]:
                 ))
             types[name] = EnumType(name=name, variants=variants)
 
+        elif type_name == 'Error':
+            variants = []
+            for v in defn.get('variants', []):
+                variants.append(Variant(
+                    name=v['name'],
+                    type_name=None
+                ))
+            types[name] = ErrorType(name=name, variants=variants)
+
         elif type_name == 'Extern':
             types[name] = ExternType(name=name, import_str=defn.get('import-rust'))
 
         else:
             print(f"Warning: Unknown type '{type_name}' for {name}", file=sys.stderr)
 
-    return types
+    methods = {}
+    method_defs = data.get('methods', {})
+    for method_name, defn in method_defs.items():
+        methods[method_name] = Method(
+            name=method_name,
+            path_pattern=defn.get('path_pattern'),
+            method_name=defn.get('name'),
+            param=defn.get('param'),
+            result=defn.get('result'),
+            error=defn.get('error'),
+        )
+
+    return types, methods
 
 
 def resolve_type(type_name: str, types: Dict[str, TypeDef]) -> str:
@@ -223,7 +259,181 @@ def generate_bitfield_layout(fields: List[Field]) -> List[tuple]:
     return layout
 
 
-def generate_rust_code(types: Dict[str, TypeDef], newtype_list_map: bool = False) -> str:
+def extract_path_params(path_pattern: str) -> List[str]:
+    import re
+    pattern = r'\{([^}]+)\}'
+    return re.findall(pattern, path_pattern)
+
+
+def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+    if not methods:
+        return ""
+
+    output = []
+    output.append("use libshvgate::shvclient::clientapi::{RpcCall, CallRpcMethodError, CallRpcMethodErrorKind};")
+
+    error_types = set()
+    result_types = set()
+
+    for m in methods.values():
+        if m.error:
+            error_types.add(m.error)
+        if m.result:
+            result_types.add(m.result)
+
+    output.append("")
+    output.append("// ============ Result type conversions ============")
+    output.append("")
+
+    for type_name in result_types:
+        if type_name in types and isinstance(types[type_name], StructType):
+            resolved = to_pascal_case(type_name)
+            output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
+            output.append("    type Error = String;")
+            output.append("")
+            output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+            output.append("        shvproto::from_rpcvalue(value).map_err(|e| e.to_string())")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+
+    output.append("// ============ Error type annotations ============")
+    output.append("")
+
+    for type_name in error_types:
+        if type_name in types and isinstance(types[type_name], ErrorType):
+            error_type = types[type_name]
+            resolved = to_pascal_case(type_name)
+            output.append(f"#[repr(u32)]")
+            output.append(f"pub enum {resolved} {{")
+            for i, v in enumerate(error_type.variants):
+                v_name = to_pascal_case(v.name)
+                output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {i},")
+            output.append("}")
+            output.append("")
+
+            output.append(f"impl From<{resolved}> for RpcError {{")
+            output.append(f"    fn from(value: {resolved}) -> Self {{")
+            output.append(f"        match value {{")
+            for v in error_type.variants:
+                v_name = to_pascal_case(v.name)
+                output.append(f"            {resolved}::{v_name} => RpcError::new(value as u32, \"{v_name}\"),")
+            output.append("        }")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+
+            output.append(f"impl TryFrom<&RpcError> for {resolved} {{")
+            output.append("    type Error = ();")
+            output.append("")
+            output.append("    fn try_from(value: &RpcError) -> Result<Self, Self::Error> {")
+            output.append("        let shvrpc::rpcmessage::RpcErrorCodeKind::UserError(code) = value.code else {")
+            output.append("            return Err(())")
+            output.append("        };")
+            output.append("        match code {")
+            for v in error_type.variants:
+                v_name = to_pascal_case(v.name)
+                output.append(f"            _ if code == {resolved}::{v_name} as _ => Ok({resolved}::{v_name}),")
+            output.append("            _ => Err(()),")
+            output.append("        }")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+
+    output.append("// ============ RpcCallError wrapper ============")
+    output.append("")
+    output.append("pub enum RpcCallError<T> {")
+    output.append("    Specific(T),")
+    output.append("    Generic(CallRpcMethodError),")
+    output.append("}")
+    output.append("")
+    output.append("impl<T> From<CallRpcMethodError> for RpcCallError<T>")
+    output.append("    where for<'a> T: TryFrom<&'a RpcError>")
+    output.append("{")
+    output.append("    fn from(value: CallRpcMethodError) -> Self {")
+    output.append("        let CallRpcMethodErrorKind::RpcError(rpc_error) = value.error() else {")
+    output.append("            return Self::Generic(value)")
+    output.append("        };")
+    output.append("        let Ok(specific_error) = T::try_from(rpc_error) else {")
+    output.append("            return Self::Generic(value)")
+    output.append("        };")
+    output.append("        Self::Specific(specific_error)")
+    output.append("    }")
+    output.append("}")
+    output.append("")
+
+    output.append("// ============ Call functions ============")
+    output.append("")
+
+    for method in methods.values():
+        method_name_snake = to_snake_case(method.name)
+        method_name = method.method_name or method.name.lower()
+        path_params = []
+        if method.path_pattern:
+            path_params = extract_path_params(method.path_pattern)
+
+        result_type = resolve_type(method.result or 'Null', types) if method.result else "()"
+        error_type = None
+        if method.error and method.error in types and isinstance(types[method.error], ErrorType):
+            error_type = to_pascal_case(method.error)
+            error_type_with_generic = f"RpcCallError<{error_type}>"
+        else:
+            error_type_with_generic = "CallRpcMethodError"
+
+        output.append(f"pub async fn call_{method_name_snake}(")
+        output.append("    path_prefix: &str,")
+        for p in path_params:
+            output.append(f"    {p}: &str,")
+        if method.param:
+            param_type = resolve_type(method.param, types)
+            output.append(f"    param: {param_type},")
+        output.append("    client_tx: &ClientCommandSender,")
+        output.append(f") -> Result<{result_type}, {error_type_with_generic}>")
+        output.append("{")
+        if method.path_pattern:
+            path_format = method.path_pattern
+            for p in path_params:
+                path_format = path_format.replace(f"{{{p}}}", f"{{{p}}}")
+            output.append(f"    let path = shvrpc::join_path!(path_prefix, format!(\"{path_format}\"));")
+        else:
+            output.append("    let path = path_prefix.to_string();")
+        output.append(f"    let rpc_call = RpcCall::new(&path, \"{method_name}\");")
+        if method.param:
+            output.append("    let rpc_call = rpc_call.param(param);")
+        output.append("    rpc_call.exec(client_tx)")
+        output.append("        .await")
+        if error_type:
+            output.append("        .map_err(RpcCallError::from)")
+        output.append("}")
+        output.append("")
+
+    output.append("// ============ Method handlers ============")
+    output.append("")
+
+    for method in methods.values():
+        method_name_snake = to_snake_case(method.name)
+        path_params = []
+        if method.path_pattern:
+            path_params = extract_path_params(method.path_pattern)
+
+        result_type = resolve_type(method.result or 'Null', types) if method.result else "()"
+        error_type = to_pascal_case(method.error) if method.error and method.error in types and isinstance(types[method.error], ErrorType) else "()"
+
+        output.append(f"pub async fn method_handler_{method_name_snake}(")
+        for p in path_params:
+            output.append(f"    {p}: String,")
+        if method.param:
+            param_type = resolve_type(method.param, types)
+            output.append(f"    param: {param_type},")
+        output.append(f") -> Result<{result_type}, {error_type}> " + "{")
+        output.append("    todo!()")
+        output.append("}")
+        output.append("")
+
+    return "\n".join(output)
+
+
+def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False) -> str:
     structs = []
     bitfields = []
     enums = []
@@ -297,7 +507,7 @@ def generate_rust_code(types: Dict[str, TypeDef], newtype_list_map: bool = False
                 output.append(f"    #[bits({size})] {dummy_name},")
             else:
                 resolved_type = resolve_type(field_type, types)
-                output.append(f"    #[bits({size})] pub {field_name}: {resolved_type},")
+                output.append(f"    #[bits({size})] pub {to_snake_case(field_name)}: {resolved_type},")
 
         output.append("}")
         output.append("")
@@ -324,10 +534,10 @@ def generate_rust_code(types: Dict[str, TypeDef], newtype_list_map: bool = False
 
     for lst in lists:
         val_type = resolve_type(lst.values_type, types)
+        lst_name = to_pascal_case(lst.name)
         if newtype_list_map:
             output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
             output.append('#[serde(transparent)]')
-            lst_name = to_pascal_case(lst.name)
             output.append(f"pub struct {lst_name}(pub Vec<{val_type}>);")
         else:
             output.append(f"pub type {lst_name} = Vec<{val_type}>;")
@@ -374,7 +584,8 @@ def generate_rust_code(types: Dict[str, TypeDef], newtype_list_map: bool = False
         output.append("#[bitenum]")
         output.append("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]")
         output.append("#[repr(u32)]")
-        output.append(f"pub enum {e.name} {{")
+        e_name = to_pascal_case(e.name)
+        output.append(f"pub enum {e_name} {{")
         for i, v in enumerate(e.variants):
             v_name = to_pascal_case(v.name)
             if i == 0:
@@ -382,6 +593,12 @@ def generate_rust_code(types: Dict[str, TypeDef], newtype_list_map: bool = False
             output.append(f"    {v_name} = {i},")
         output.append("}")
         output.append("")
+
+    if methods:
+        methods_code = generate_methods_code(methods, types)
+        if methods_code:
+            output.append("")
+            output.append(methods_code)
 
     return "\n".join(output)
 
@@ -391,6 +608,6 @@ if __name__ == '__main__':
     parser.add_argument('--newtype', action='store_true', help='Generate List/Map as newtype structs instead of type aliases')
     args = parser.parse_args()
 
-    types = parse_yaml(sys.stdin)
-    code = generate_rust_code(types, newtype_list_map=args.newtype)
+    types, methods = parse_yaml(sys.stdin)
+    code = generate_rust_code(types, methods, newtype_list_map=args.newtype)
     print(code)
