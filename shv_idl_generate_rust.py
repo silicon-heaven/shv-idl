@@ -81,7 +81,7 @@ class ErrorType(TypeDef):
 
 @dataclass
 class ExternType(TypeDef):
-    import_str: Optional[str] = None
+    pass
 
 
 @dataclass
@@ -207,7 +207,7 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method]]:
             types[name] = ErrorType(name=name, variants=variants)
 
         elif type_name == 'Extern':
-            types[name] = ExternType(name=name, import_str=defn.get('import-rust'))
+            types[name] = ExternType(name=name)
 
         else:
             print(f"Warning: Unknown type '{type_name}' for {name}", file=sys.stderr)
@@ -433,7 +433,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
     return "\n".join(output)
 
 
-def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False) -> str:
+def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, extern_imports: List[str] = None) -> str:
     structs = []
     bitfields = []
     enums = []
@@ -468,8 +468,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     if maps:
         output.append("use std::collections::BTreeMap;")
 
-    for t in externs:
-       output.append(f"{t.import_str}")
+    for import_str in (extern_imports or []):
+        output.append(import_str)
 
     output.append("")
 
@@ -606,8 +606,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SHV IDL to Rust code generator')
     parser.add_argument('--newtype', action='store_true', help='Generate List/Map as newtype structs instead of type aliases')
+    parser.add_argument('--extern-import', action='append', dest='extern_imports', default=[],
+                        metavar='IMPORT_STR', help='Import string for an Extern type (repeatable)')
     args = parser.parse_args()
 
     types, methods = parse_yaml(sys.stdin)
-    code = generate_rust_code(types, methods, newtype_list_map=args.newtype)
+    code = generate_rust_code(types, methods, newtype_list_map=args.newtype, extern_imports=args.extern_imports)
     print(code)
