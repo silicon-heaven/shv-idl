@@ -280,6 +280,8 @@ def generate_bitfield_layout(fields: List[Field]) -> List[tuple]:
     layout = []
     current_bit = 0
 
+    fields.sort(key=lambda f: min(f.bits))
+
     for f in fields:
         bits = f.bits
         if not bits:
