@@ -327,7 +327,8 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
     output.append("")
 
     for type_name in result_types:
-        if type_name in types and (isinstance(types[type_name], StructType) or isinstance(types[type_name], EnumType) or isinstance(types[type_name], UnionType) or isinstance(types[type_name], BitfieldType)):
+        ty = types.get(type_name)
+        if isinstance(ty, StructType) or isinstance(ty, EnumType) or isinstance(ty, UnionType) or isinstance(ty, BitfieldType):
             resolved = to_pascal_case(type_name)
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
@@ -526,12 +527,12 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         error_type = "CallRpcMethodError"
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
             error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
-        sig = f"{'    ' * depth}pub async fn {func_name}("
+        sig = f"{'    ' * depth}pub async fn {func_name}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
         sig += f"client_tx: &ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
-        output.append(f"{'    ' * (depth+1)}RpcCall::new(_NODE_PATH, \"{func_name}\")")
+        output.append(f"{'    ' * (depth+1)}RpcCall::new(shvrpc::join_path!(mount_path, _NODE_PATH), \"{func_name}\")")
         if param_type:
             output.append(f"{'    ' * (depth+1)}    .param(param)")
         output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
