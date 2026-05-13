@@ -94,6 +94,13 @@ class Method:
     error: Optional[str] = None
 
 
+@dataclass
+class NodeDef:
+    name: str
+    methods: List[str] = field(default_factory=list)
+    tree: Dict[str, str] = field(default_factory=dict)
+
+
 def to_pascal_case(name: str) -> str:
     # Split on:
     # - transitions from lower/digit -> upper
@@ -116,7 +123,22 @@ def to_snake_case(name: str) -> str:
     return re.sub(r'_+', '_', name).strip('_').lower()
 
 
-def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method]]:
+RUST_KEYWORDS = {
+    'as', 'async', 'await', 'box', 'break', 'const', 'continue', 'crate', 'dyn',
+    'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
+    'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self',
+    'Self', 'static', 'struct', 'super', 'trait', 'true', 'type', 'unsafe', 'use',
+    'where', 'while', 'union',
+}
+
+
+def sanitize_module_name(name: str) -> str:
+    if name in RUST_KEYWORDS:
+        return f'r#{name}'
+    return name
+
+
+def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], Dict[str, str], Dict[str, NodeDef]]:
     data = yaml.load(stream, Loader=yaml.SafeLoader)
 
     types = {}
@@ -191,19 +213,25 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method]]:
         elif type_name == 'Enum':
             variants = []
             for v in defn.get('variants', []):
-                variants.append(Variant(
-                    name=v['name'],
-                    type_name=None
-                ))
+                if isinstance(v, str):
+                    variants.append(Variant(name=v, type_name=None))
+                else:
+                    variants.append(Variant(
+                        name=v['name'],
+                        type_name=None
+                    ))
             types[name] = EnumType(name=name, variants=variants)
 
         elif type_name == 'Error':
             variants = []
             for v in defn.get('variants', []):
-                variants.append(Variant(
-                    name=v['name'],
-                    type_name=None
-                ))
+                if isinstance(v, str):
+                    variants.append(Variant(name=v, type_name=None))
+                else:
+                    variants.append(Variant(
+                        name=v['name'],
+                        type_name=None
+                    ))
             types[name] = ErrorType(name=name, variants=variants)
 
         elif type_name == 'Extern':
@@ -224,7 +252,18 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method]]:
             error=defn.get('error'),
         )
 
-    return types, methods
+    tree_data = data.get('tree', {})
+
+    nodes_data = {}
+    node_defs = data.get('nodes', {})
+    for node_name, defn in node_defs.items():
+        nodes_data[node_name] = NodeDef(
+            name=node_name,
+            methods=defn.get('methods', []),
+            tree=defn.get('tree', {}),
+        )
+
+    return types, methods, tree_data, nodes_data
 
 
 def resolve_type(type_name: str, types: Dict[str, TypeDef]) -> str:
@@ -433,7 +472,92 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
     return "\n".join(output)
 
 
-def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, extern_imports: List[str] = None) -> str:
+def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+    if not tree_data:
+        return ""
+
+    all_paths = {}
+
+    def add_path(path: str, type_name: str) -> None:
+        if path not in all_paths:
+            all_paths[path] = type_name
+
+    def expand_node(type_name: str, path_prefix: str) -> None:
+        node = nodes_data.get(type_name)
+        if not node or not node.tree:
+            return
+        for rel_path, child_type in node.tree.items():
+            child_path = f"{path_prefix}/{rel_path}"
+            add_path(child_path, child_type)
+            expand_node(child_type, child_path)
+
+    for path, type_name in tree_data.items():
+        add_path(path, type_name)
+        node = nodes_data.get(type_name)
+        if node and node.tree:
+            expand_node(type_name, path)
+
+    tree = {}
+
+    def build_tree_from_path(path: str) -> None:
+        segs = path.split('/')
+        d = tree
+        for seg in segs:
+            if not isinstance(d.get(seg), dict):
+                d[seg] = {}
+            d = d[seg]
+
+    for path in all_paths.keys():
+        build_tree_from_path(path)
+
+    output = []
+    output.append("pub mod tree {")
+    output.append("    use libshvgate::shvclient::clientapi::RpcCall;")
+
+    def emit_method(method_name: str, depth: int) -> None:
+        method = methods.get(method_name)
+        if not method:
+            return
+        func_name = method.method_name
+        result_type = resolve_type(method.result or 'Null', types) if method.result else '()'
+        param_type = resolve_type(method.param, types) if method.param else None
+        error_type = "CallRpcMethodError"
+        if method.error and method.error in types and isinstance(types[method.error], ErrorType):
+            error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
+        sig = f"{'    ' * depth}pub async fn {func_name}("
+        if param_type:
+            sig += f"param: {param_type}, "
+        sig += f"client_tx: &ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
+        output.append(sig)
+        output.append(f"{'    ' * (depth+1)}RpcCall::new(_NODE_PATH, \"{func_name}\")")
+        if param_type:
+            output.append(f"{'    ' * (depth+1)}    .param(param)")
+        output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
+        output.append(f"{'    ' * (depth+1)}    .await")
+        if error_type != "CallRpcMethodError":
+            output.append(f"{'    ' * (depth+1)}    .map_err(RpcCallError::from)")
+        output.append(f"{'    ' * depth}}}")
+
+    def render_module(d: Dict, path_prefix: str, depth: int) -> None:
+        for key in sorted(d.keys()):
+            val = d[key]
+            full_path = f"{path_prefix}/{key}" if path_prefix else key
+            output.append(f"{'    ' * depth}pub mod {sanitize_module_name(key)} {{")
+            node_def = nodes_data.get(all_paths.get(full_path))
+            if node_def and node_def.methods:
+                output.append(f"{'    ' * (depth+1)}const _NODE_PATH: &str = \"{full_path}\";")
+                for mn in node_def.methods:
+                    emit_method(mn, depth + 1)
+            if isinstance(val, dict):
+                render_module(val, full_path, depth + 1)
+            output.append(f"{'    ' * depth}}}")
+
+    render_module(tree, "", 1)
+    output.append("}")
+    return "\n".join(output)
+
+
+def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, extern_imports: List[str] = None, tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None) -> str:
     structs = []
     bitfields = []
     enums = []
@@ -600,6 +724,12 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             output.append("")
             output.append(methods_code)
 
+    if tree_data or nodes_data:
+        tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types)
+        if tree_code:
+            output.append("")
+            output.append(tree_code)
+
     return "\n".join(output)
 
 
@@ -608,8 +738,15 @@ if __name__ == '__main__':
     parser.add_argument('--newtype', action='store_true', help='Generate List/Map as newtype structs instead of type aliases')
     parser.add_argument('--extern-import', action='append', dest='extern_imports', default=[],
                         metavar='IMPORT_STR', help='Import string for an Extern type (repeatable)')
+    parser.add_argument('--tree', action='store_true', help='Generate tree/nodes module code')
     args = parser.parse_args()
 
-    types, methods = parse_yaml(sys.stdin)
-    code = generate_rust_code(types, methods, newtype_list_map=args.newtype, extern_imports=args.extern_imports)
+    types, methods, tree_data, nodes_data = parse_yaml(sys.stdin)
+    code = generate_rust_code(
+        types, methods,
+        newtype_list_map=args.newtype,
+        extern_imports=args.extern_imports,
+        tree_data=tree_data if args.tree else None,
+        nodes_data=nodes_data if args.tree else None,
+    )
     print(code)
