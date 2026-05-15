@@ -92,6 +92,11 @@ class Method:
     param: Optional[str] = None
     result: Optional[str] = None
     error: Optional[str] = None
+    access: Optional[str] = None
+    is_getter: bool = False
+    user_id_required: bool = False
+    signals: Optional[Dict] = None
+    description: Optional[str] = None
 
 
 @dataclass
@@ -240,6 +245,13 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
         else:
             print(f"Warning: Unknown type '{type_name}' for {name}", file=sys.stderr)
 
+    def parse_bool(val):
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ('true', '1', 'yes')
+        return bool(val)
+
     methods = {}
     method_defs = data.get('methods', {})
     for method_name, defn in method_defs.items():
@@ -250,6 +262,11 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
             param=defn.get('param'),
             result=defn.get('result'),
             error=defn.get('error'),
+            access=defn.get('access'),
+            is_getter=parse_bool(defn.get('isGetter')),
+            user_id_required=parse_bool(defn.get('userIdRequired')),
+            signals=defn.get('signals'),
+            description=defn.get('description'),
         )
 
     tree_data = data.get('tree', {})
@@ -472,6 +489,84 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
         output.append("}")
         output.append("")
 
+    return "\n".join(output)
+
+
+ACCESS_MAP = {
+    "rd": "AccessLevel::Read",
+    "wr": "AccessLevel::Write",
+    "cmd": "AccessLevel::Command",
+    "cfg": "AccessLevel::Config",
+    "srv": "AccessLevel::Service",
+    "ssrv": "AccessLevel::SuperService",
+    "dev": "AccessLevel::Developer",
+    "su": "AccessLevel::Superuser",
+}
+
+def generate_metamethods_code(methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+    methods_with_access = {name: m for name, m in methods.items() if m.access}
+    if not methods_with_access:
+        return ""
+
+    output = []
+    output.append("pub mod metamethods {")
+    output.append("    use libshvgate::shvclient::shvrpc::metamethod::{MetaMethod, Flags, AccessLevel};")
+    output.append("")
+
+    for method_name, method in methods_with_access.items():
+        const_name = f"META_METHOD_{to_snake_case(method.name).upper()}"
+
+        method_name_str = method.method_name or "get"
+
+        flags_parts = []
+        if method.is_getter:
+            flags_parts.append("Flags::IsGetter")
+        if method.user_id_required:
+            flags_parts.append("Flags::UserIDRequired")
+
+        if len(flags_parts) == 1:
+            flags_str = f"{flags_parts[0]}"
+        elif len(flags_parts) > 1:
+            flags_str = "Flags::None.union(" + ".union(".join(flags_parts) + ")" * len(flags_parts)
+        else:
+            flags_str = "Flags::None"
+
+        access_str = ACCESS_MAP.get(method.access, "bws")
+
+        param_type = resolve_type(method.param, types) if method.param else "Null"
+
+        if method.result:
+            result_type = resolve_type(method.result, types)
+            if method.error:
+                result_type = f"{result_type}|{to_pascal_case(method.error)}"
+        else:
+            result_type = "Null"
+
+        if method.signals:
+            signal_items = []
+            for sig_name, sig_val in method.signals.items():
+                if sig_val is None:
+                    signal_items.append(f'("{sig_name}", None)')
+                else:
+                    signal_items.append(f'("{sig_name}", Some("{sig_val}"))')
+            signals_str = f"&[{', '.join(signal_items)}]"
+        else:
+            signals_str = "&[]"
+
+        description = method.description or ""
+
+        output.append(f"    pub const {const_name}: MetaMethod = MetaMethod::new_static(")
+        output.append(f'        "{method_name_str}",')
+        output.append(f"        {flags_str},")
+        output.append(f"        {access_str},")
+        output.append(f'        "{param_type}",')
+        output.append(f'        "{result_type}",')
+        output.append(f"        {signals_str},")
+        output.append(f'        "{description}"')
+        output.append("    );")
+        output.append("")
+
+    output.append("}")
     return "\n".join(output)
 
 
@@ -726,6 +821,11 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         if methods_code:
             output.append("")
             output.append(methods_code)
+
+        metamethods_code = generate_metamethods_code(methods, types)
+        if metamethods_code:
+            output.append("")
+            output.append(metamethods_code)
 
     if tree_data or nodes_data:
         tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types)
