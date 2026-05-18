@@ -493,17 +493,87 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
 
 
 ACCESS_MAP = {
-    "rd": "AccessLevel::Read",
-    "wr": "AccessLevel::Write",
-    "cmd": "AccessLevel::Command",
-    "cfg": "AccessLevel::Config",
-    "srv": "AccessLevel::Service",
-    "ssrv": "AccessLevel::SuperService",
-    "dev": "AccessLevel::Developer",
-    "su": "AccessLevel::Superuser",
+    "bws": "Browse",
+    "rd": "Read",
+    "wr": "Write",
+    "cmd": "Command",
+    "cfg": "Config",
+    "srv": "Service",
+    "ssrv": "SuperService",
+    "dev": "Developer",
+    "su": "Superuser",
 }
 
-def generate_metamethods_code(methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+
+def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+    nodes_with_methods = {name: n for name, n in nodes_data.items() if n.methods}
+    if not nodes_with_methods:
+        return ""
+
+    output = []
+
+    for node_name, node in nodes_with_methods.items():
+        pascal_name = to_pascal_case(node_name)
+        output.append(f"use crate::nodes::{pascal_name};")
+        output.append("shvclient::impl_static_node! {")
+        output.append(f"    {pascal_name}(&self, request, client_cmd_tx) {{")
+
+        for method_name in node.methods:
+            method = methods.get(method_name)
+            if not method:
+                continue
+
+            method_str = method.method_name or "get"
+
+            flags = []
+            if method.is_getter:
+                flags.append("IsGetter")
+            if method.user_id_required:
+                flags.append("UserIDRequired")
+            flags_str = " | ".join(flags) if flags else "None"
+
+            access_str = ACCESS_MAP.get(method.access, "Read")
+
+            param_type = method.param or "Null"
+
+            param_str = ""
+            args_str = "request, client_cmd_tx"
+            if method.param:
+                param_str = f' (param: {resolve_type(param_type, types)})'
+                args_str = "request, param, client_cmd_tx"
+
+            if method.result:
+                result_type = method.result
+                if method.error:
+                    result_type = f"{result_type}|{to_pascal_case(method.error)}"
+            else:
+                result_type = "Null"
+
+            signals_str = ""
+            if method.signals:
+                signal_items = []
+                for sig_name, sig_val in method.signals.items():
+                    if sig_val is None:
+                        signal_items.append(f'("{sig_name}", None)')
+                    else:
+                        signal_items.append(f'("{sig_name}", Some("{sig_val}"))')
+                signals_str = " { " + ", ".join(signal_items) + " }"
+
+            snake_name = to_snake_case(method_name)
+
+            output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{param_str}{signals_str} => {{')
+            output.append(f"            self.{snake_name}({args_str}).await")
+            output.append("        }")
+            output.append("")
+
+        output.append("    }")
+        output.append("}")
+        output.append("")
+
+    return "\n".join(output)
+
+
+def generate_metamethods_code(methods: Dict[str, Method]) -> str:
     methods_with_access = {name: m for name, m in methods.items() if m.access}
     if not methods_with_access:
         return ""
@@ -531,12 +601,12 @@ def generate_metamethods_code(methods: Dict[str, Method], types: Dict[str, TypeD
         else:
             flags_str = "Flags::None"
 
-        access_str = ACCESS_MAP.get(method.access, "bws")
+        access_str = f'AccessLevel::{ACCESS_MAP.get(method.access, "Read")}'
 
-        param_type = resolve_type(method.param, types) if method.param else "Null"
+        param_type = method.param if method.param else "Null"
 
         if method.result:
-            result_type = resolve_type(method.result, types)
+            result_type = method.result
             if method.error:
                 result_type = f"{result_type}|{to_pascal_case(method.error)}"
         else:
@@ -844,7 +914,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             output.append("")
             output.append(methods_code)
 
-        metamethods_code = generate_metamethods_code(methods, types)
+        metamethods_code = generate_metamethods_code(methods)
         if metamethods_code:
             output.append("")
             output.append(metamethods_code)
@@ -854,6 +924,12 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         if tree_code:
             output.append("")
             output.append(tree_code)
+
+    if nodes_data:
+        static_node_code = generate_static_node_code(nodes_data, methods or {}, types)
+        if static_node_code:
+            output.append("")
+            output.append(static_node_code)
 
     return "\n".join(output)
 
