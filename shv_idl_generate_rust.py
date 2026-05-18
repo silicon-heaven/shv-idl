@@ -627,7 +627,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             sig += f"param: {param_type}, "
         sig += f"client_tx: &ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
-        output.append(f"{'    ' * (depth+1)}RpcCall::new(shvrpc::join_path!(mount_path, _NODE_PATH), \"{func_name}\")")
+        output.append(f"{'    ' * (depth+1)}RpcCall::new(shvrpc::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
         if param_type:
             output.append(f"{'    ' * (depth+1)}    .param(param)")
         output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
@@ -643,7 +643,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * depth}pub mod {sanitize_module_name(key)} {{")
             node_def = nodes_data.get(all_paths.get(full_path))
             if node_def and node_def.methods:
-                output.append(f"{'    ' * (depth+1)}const _NODE_PATH: &str = \"{full_path}\";")
+                output.append(f"{'    ' * (depth+1)}pub const NODE_PATH: &str = \"{full_path}\";")
                 for mn in node_def.methods:
                     emit_method(mn, depth + 1)
             if isinstance(val, dict):
@@ -652,6 +652,28 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
 
     render_module(tree, "", 1)
     output.append("}")
+
+    paths_with_methods = {}
+    for path, type_name in all_paths.items():
+        node_def = nodes_data.get(type_name)
+        if node_def and node_def.methods:
+            paths_with_methods[path] = node_def.methods
+
+    if paths_with_methods:
+        output.append("")
+        output.append("pub fn tree_definition() -> libshvgate::ShvTreeDefinition {")
+        output.append("    let mut nodes_description = std::collections::BTreeMap::new();")
+        output.append("")
+
+        for path in sorted(paths_with_methods.keys()):
+            meta_methods = ", ".join(f"metamethods::META_METHOD_{to_snake_case(m).upper()}" for m in paths_with_methods[path])
+            path_modules = "::".join(sanitize_module_name(s) for s in path.split('/'))
+            output.append(f'    nodes_description.insert(tree::{path_modules}::NODE_PATH.clone(), NodeDescription {{ methods: vec![{meta_methods}] }});')
+
+        output.append("")
+        output.append("    libshvgate::ShvTreeDefinition { nodes_description }")
+        output.append("}")
+
     return "\n".join(output)
 
 
