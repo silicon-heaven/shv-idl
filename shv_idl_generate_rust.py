@@ -85,6 +85,18 @@ class ExternType(TypeDef):
 
 
 @dataclass
+class IntType(TypeDef):
+    min: Optional[int] = None
+    max: Optional[int] = None
+
+
+@dataclass
+class DoubleType(TypeDef):
+    min: Optional[float] = None
+    max: Optional[float] = None
+
+
+@dataclass
 class Method:
     name: str
     path_pattern: Optional[str] = None
@@ -242,6 +254,20 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
         elif type_name == 'Extern':
             types[name] = ExternType(name=name)
 
+        elif type_name == 'Int':
+            types[name] = IntType(
+                name=name,
+                min=defn.get('min'),
+                max=defn.get('max')
+            )
+
+        elif type_name == 'Double':
+            types[name] = DoubleType(
+                name=name,
+                min=defn.get('min'),
+                max=defn.get('max')
+            )
+
         else:
             print(f"Warning: Unknown type '{type_name}' for {name}", file=sys.stderr)
 
@@ -289,6 +315,11 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef]) -> str:
 
     if type_name in types:
         return to_pascal_case(type_name)
+
+    if type_name == 'Int':
+        return 'i64'
+    if type_name == 'Double':
+        return 'f64'
 
     return type_name
 
@@ -755,6 +786,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     maps = []
     unions = []
     externs = []
+    ints = []
+    doubles = []
 
     for name, t in types.items():
         if isinstance(t, StructType):
@@ -771,6 +804,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             unions.append(t)
         elif isinstance(t, ExternType):
             externs.append(t)
+        elif isinstance(t, IntType):
+            ints.append(t)
+        elif isinstance(t, DoubleType):
+            doubles.append(t)
 
     output = []
     output.append("use serde::{Serialize, Deserialize};")
@@ -905,6 +942,108 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             if i == 0:
                 output.append(f"    #[default] #[fallback]")
             output.append(f"    {v_name} = {i},")
+        output.append("}")
+        output.append("")
+
+    output.append("// ============ Newtype Ints ============")
+    output.append("")
+
+    for t in ints:
+        name = to_pascal_case(t.name)
+        impl_min = t.min if t.min is not None else "i64::MIN"
+        impl_max = t.max if t.max is not None else "i64::MAX"
+
+        output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
+        output.append('#[serde(try_from = "i64", into = "i64")]')
+        output.append(f"pub struct {name}(i64);")
+        output.append("")
+        output.append(f"impl {name} {{")
+        output.append(f"    pub fn value(&self) -> i64 {{ self.0 }}")
+        output.append(f"}}")
+        output.append("")
+        output.append(f"impl TryFrom<i64> for {name} {{")
+        output.append("    type Error = String;")
+        output.append("")
+        output.append(f"    fn try_from(value: i64) -> Result<Self, Self::Error> {{")
+        output.append(f"        const MIN_VALUE: i64 = {impl_min};")
+        output.append(f"        const MAX_VALUE: i64 = {impl_max};")
+        output.append("        if value < MIN_VALUE || value > MAX_VALUE {")
+        output.append("            return Err(format!(\"Value `{value}` out of range, must be within [{MIN_VALUE}, {MAX_VALUE}]\"));")
+        output.append("        }")
+        output.append("        Ok(Self(value))")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl TryFrom<&RpcValue> for {name} {{")
+        output.append("    type Error = String;")
+        output.append("")
+        output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+        output.append("        let v: i64 = value.try_into()?;")
+        output.append("        v.try_into()")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl From<{name}> for i64 {{")
+        output.append(f"    fn from(value: {name}) -> Self {{")
+        output.append("        value.0")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl From<{name}> for RpcValue {{")
+        output.append(f"    fn from(value: {name}) -> Self {{")
+        output.append("        value.0.into()")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+
+    output.append("// ============ Newtype Doubles ============")
+    output.append("")
+
+    for t in doubles:
+        name = to_pascal_case(t.name)
+        impl_min = t.min if t.min is not None else "f64::MIN"
+        impl_max = t.max if t.max is not None else "f64::MAX"
+
+        output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
+        output.append('#[serde(try_from = "f64", into = "f64")]')
+        output.append(f"pub struct {name}(f64);")
+        output.append("")
+        output.append(f"impl {name} {{")
+        output.append(f"    pub fn value(&self) -> f64 {{ self.0 }}")
+        output.append(f"}}")
+        output.append("")
+        output.append(f"impl TryFrom<f64> for {name} {{")
+        output.append("    type Error = String;")
+        output.append("")
+        output.append(f"    fn try_from(value: f64) -> Result<Self, Self::Error> {{")
+        output.append(f"        const MIN_VALUE: f64 = {impl_min};")
+        output.append(f"        const MAX_VALUE: f64 = {impl_max};")
+        output.append("        if value < MIN_VALUE || value > MAX_VALUE {")
+        output.append("            return Err(format!(\"Value `{value}` out of range, must be within [{MIN_VALUE}, {MAX_VALUE}]\"));")
+        output.append("        }")
+        output.append("        Ok(Self(value))")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl TryFrom<&RpcValue> for {name} {{")
+        output.append("    type Error = String;")
+        output.append("")
+        output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+        output.append("        let v: f64 = value.try_into()?;")
+        output.append("        v.try_into()")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl From<{name}> for f64 {{")
+        output.append(f"    fn from(value: {name}) -> Self {{")
+        output.append("        value.0")
+        output.append("    }")
+        output.append("}")
+        output.append("")
+        output.append(f"impl From<{name}> for RpcValue {{")
+        output.append(f"    fn from(value: {name}) -> Self {{")
+        output.append("        value.0.into()")
+        output.append("    }")
         output.append("}")
         output.append("")
 
