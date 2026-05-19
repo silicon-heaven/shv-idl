@@ -345,7 +345,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
 
     for type_name in result_types:
         ty = types.get(type_name)
-        if isinstance(ty, StructType) or isinstance(ty, EnumType) or isinstance(ty, UnionType) or isinstance(ty, BitfieldType):
+        if isinstance(ty, (StructType, EnumType, UnionType, BitfieldType)):
             resolved = to_pascal_case(type_name)
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
