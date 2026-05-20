@@ -33,6 +33,7 @@ class Field:
 class Variant:
     name: str
     type_name: Optional[str] = None
+    value: Optional[int] = None
 
 
 @dataclass
@@ -235,7 +236,8 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
                 else:
                     variants.append(Variant(
                         name=v['name'],
-                        type_name=None
+                        type_name=None,
+                        value=v.get('value')
                     ))
             types[name] = EnumType(name=name, variants=variants)
 
@@ -247,7 +249,8 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
                 else:
                     variants.append(Variant(
                         name=v['name'],
-                        type_name=None
+                        type_name=None,
+                        value=v.get('value')
                     ))
             types[name] = ErrorType(name=name, variants=variants)
 
@@ -398,7 +401,12 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
             output.append(f"pub enum {resolved} {{")
             for i, v in enumerate(error_type.variants):
                 v_name = to_pascal_case(v.name)
-                output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {i},")
+                if v.value is not None:
+                    output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {v.value},")
+                elif i == 0:
+                    output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {i},")
+                else:
+                    output.append(f"    {v_name},")
             output.append("}")
             output.append("")
 
@@ -903,7 +911,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             v_name = to_pascal_case(v.name)
             if i == 0:
                 output.append(f"    #[default] #[fallback]")
-            output.append(f"    {v_name} = {i},")
+            if v.value is not None:
+                output.append(f"    {v_name} = {v.value},")
+            else:
+                output.append(f"    {v_name},")
         output.append("}")
         output.append("")
 
