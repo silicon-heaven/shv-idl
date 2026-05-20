@@ -847,6 +847,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
     for bf in bitfields:
         output.append(f"#[bitfield(u32)]")
+        output.append("#[derive(Clone, Serialize, Deserialize)]")
+        output.append('#[serde(from = "u32", into = "u32")]')
         bf_name = to_pascal_case(bf.name)
         output.append(f"pub struct {bf_name} {{")
 
@@ -861,23 +863,6 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
                 output.append(f"    #[bits({size})] pub {to_snake_case(field_name)}: {resolved_type},")
 
         output.append("}")
-        output.append("")
-
-        output.append(f"impl serde::Serialize for {bf_name} {{")
-        output.append(f"    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>")
-        output.append(f"        where S: serde::Serializer {{")
-        output.append(f"            serializer.serialize_u32(self.into_bits())")
-        output.append(f"    }}")
-        output.append(f"}}")
-        output.append("")
-
-        output.append(f"impl<'de> serde::Deserialize<'de> for {bf_name} {{")
-        output.append(f"    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>")
-        output.append(f"        where D: serde::Deserializer<'de> {{")
-        output.append(f"            let bits = serde::de::Value::deserialize(deserializer)?;")
-        output.append(f"            Ok(Self::from_bits(bits))")
-        output.append(f"    }}")
-        output.append(f"}}")
         output.append("")
 
     output.append("// ============ Lists ============")
