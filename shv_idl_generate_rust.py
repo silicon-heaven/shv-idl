@@ -497,29 +497,6 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
         output.append("}")
         output.append("")
 
-    output.append("// ============ Method handlers ============")
-    output.append("")
-
-    for method in methods.values():
-        method_name_snake = to_snake_case(method.name)
-        path_params = []
-        if method.path_pattern:
-            path_params = extract_path_params(method.path_pattern)
-
-        result_type = resolve_type(method.result or 'Null', types) if method.result else "()"
-        error_type = to_pascal_case(method.error) if method.error and method.error in types and isinstance(types[method.error], ErrorType) else "()"
-
-        output.append(f"pub async fn method_handler_{method_name_snake}(")
-        for p in path_params:
-            output.append(f"    {p}: String,")
-        if method.param:
-            param_type = resolve_type(method.param, types)
-            output.append(f"    param: {param_type},")
-        output.append(f") -> Result<{result_type}, {error_type}> " + "{")
-        output.append("    todo!()")
-        output.append("}")
-        output.append("")
-
     return "\n".join(output)
 
 
