@@ -312,6 +312,14 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
     return types, methods, tree_data, nodes_data
 
 
+def parse_config(stream) -> tuple:
+    data = yaml.load(stream, Loader=yaml.SafeLoader)
+    components = data.get('components', [])
+    imports_module = data.get('imports_module', 'crate')
+    newtype_list_map = data.get('newtype_list_map', False)
+    return components, imports_module, newtype_list_map
+
+
 def resolve_type(type_name: str, types: Dict[str, TypeDef]) -> str:
     if type_name in PRIMITIVE_TYPES:
         return PRIMITIVE_TYPES[type_name]
@@ -357,12 +365,15 @@ def extract_path_params(path_pattern: str) -> List[str]:
     return re.findall(pattern, path_pattern)
 
 
-def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, imports_module: str = 'crate') -> str:
     if not methods:
         return ""
 
     output = []
-    output.append("use libshvgate::shvclient::clientapi::{RpcCall, CallRpcMethodError, CallRpcMethodErrorKind};")
+
+    if generate_client:
+        output.append(f"use {imports_module}::shvclient::clientapi::{{ClientCommandSender, RpcCall}};")
+        output.append(f"use {imports_module}::shvrpc::join_path;")
 
     error_types = set()
     result_types = set()
@@ -372,6 +383,12 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
             error_types.add(m.error)
         if m.result:
             result_types.add(m.result)
+
+    if result_types:
+        output.append(f"use {imports_module}::shvproto::RpcValue;")
+    if error_types:
+        output.append(f"use {imports_module}::shvclient::clientapi::{{RpcError, CallRpcMethodError, CallRpcMethodErrorKind}};")
+        output.append(f"use {imports_module}::shvrpc::rpcmessage::{{RpcErrorCodeKind, USER_ERROR_CODE_DEFAULT}};")
 
     output.append("")
     output.append("// ============ Result type conversions ============")
@@ -402,9 +419,9 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
             for i, v in enumerate(error_type.variants):
                 v_name = to_pascal_case(v.name)
                 if v.value is not None:
-                    output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {v.value},")
+                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {v.value},")
                 elif i == 0:
-                    output.append(f"    {v_name} = shvrpc::rpcmessage::USER_ERROR_CODE_DEFAULT + {i},")
+                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {i},")
                 else:
                     output.append(f"    {v_name},")
             output.append("}")
@@ -425,7 +442,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
             output.append("    type Error = ();")
             output.append("")
             output.append("    fn try_from(value: &RpcError) -> Result<Self, Self::Error> {")
-            output.append("        let shvrpc::rpcmessage::RpcErrorCodeKind::UserError(code) = value.code else {")
+            output.append("        let RpcErrorCodeKind::UserError(code) = value.code else {")
             output.append("            return Err(())")
             output.append("        };")
             output.append("        match code {")
@@ -460,50 +477,52 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef])
     output.append("}")
     output.append("")
 
-    output.append("// ============ Call functions ============")
-    output.append("")
 
-    for method in methods.values():
-        method_name_snake = to_snake_case(method.name)
-        method_name = method.method_name or method.name.lower()
-        path_params = []
-        if method.path_pattern:
-            path_params = extract_path_params(method.path_pattern)
-
-        result_type = resolve_type(method.result or 'Null', types) if method.result else "()"
-        error_type = None
-        if method.error and method.error in types and isinstance(types[method.error], ErrorType):
-            error_type = to_pascal_case(method.error)
-            error_type_with_generic = f"RpcCallError<{error_type}>"
-        else:
-            error_type_with_generic = "CallRpcMethodError"
-
-        output.append(f"pub async fn call_{method_name_snake}(")
-        output.append("    path_prefix: &str,")
-        for p in path_params:
-            output.append(f"    {p}: &str,")
-        if method.param:
-            param_type = resolve_type(method.param, types)
-            output.append(f"    param: {param_type},")
-        output.append("    client_tx: &ClientCommandSender,")
-        output.append(f") -> Result<{result_type}, {error_type_with_generic}>")
-        output.append("{")
-        if method.path_pattern:
-            path_format = method.path_pattern
-            for p in path_params:
-                path_format = path_format.replace(f"{{{p}}}", f"{{{p}}}")
-            output.append(f"    let path = shvrpc::join_path!(path_prefix, format!(\"{path_format}\"));")
-        else:
-            output.append("    let path = path_prefix.to_string();")
-        output.append(f"    let rpc_call = RpcCall::new(&path, \"{method_name}\");")
-        if method.param:
-            output.append("    let rpc_call = rpc_call.param(param);")
-        output.append("    rpc_call.exec(client_tx)")
-        output.append("        .await")
-        if error_type:
-            output.append("        .map_err(RpcCallError::from)")
-        output.append("}")
+    if generate_client:
+        output.append("// ============ Client API call functions ============")
         output.append("")
+
+        for method in methods.values():
+            method_name_snake = to_snake_case(method.name)
+            method_name = method.method_name or method.name.lower()
+            path_params = []
+            if method.path_pattern:
+                path_params = extract_path_params(method.path_pattern)
+
+            result_type = resolve_type(method.result or 'Null', types) if method.result else "()"
+            error_type = None
+            if method.error and method.error in types and isinstance(types[method.error], ErrorType):
+                error_type = to_pascal_case(method.error)
+                error_type_with_generic = f"RpcCallError<{error_type}>"
+            else:
+                error_type_with_generic = "CallRpcMethodError"
+
+            output.append(f"pub async fn call_{method_name_snake}(")
+            output.append("    path_prefix: &str,")
+            for p in path_params:
+                output.append(f"    {p}: &str,")
+            if method.param:
+                param_type = resolve_type(method.param, types)
+                output.append(f"    param: {param_type},")
+            output.append("    client_tx: &ClientCommandSender,")
+            output.append(f") -> Result<{result_type}, {error_type_with_generic}>")
+            output.append("{")
+            if method.path_pattern:
+                path_format = method.path_pattern
+                for p in path_params:
+                    path_format = path_format.replace(f"{{{p}}}", f"{{{p}}}")
+                output.append(f"    let path = join_path!(path_prefix, format!(\"{path_format}\"));")
+            else:
+                output.append("    let path = path_prefix.to_string();")
+            output.append(f"    let rpc_call = RpcCall::new(&path, \"{method_name}\");")
+            if method.param:
+                output.append("    let rpc_call = rpc_call.param(param);")
+            output.append("    rpc_call.exec(client_tx)")
+            output.append("        .await")
+            if error_type:
+                output.append("        .map_err(RpcCallError::from)")
+            output.append("}")
+            output.append("")
 
     return "\n".join(output)
 
@@ -521,7 +540,7 @@ ACCESS_MAP = {
 }
 
 
-def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], imports_module: str = 'crate') -> str:
     nodes_with_methods = {name: n for name, n in nodes_data.items() if n.methods}
     if not nodes_with_methods:
         return ""
@@ -530,8 +549,8 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
 
     for node_name, node in nodes_with_methods.items():
         pascal_name = to_pascal_case(node_name)
-        output.append(f"use crate::nodes::{pascal_name};")
-        output.append("shvclient::impl_static_node! {")
+        output.append(f"use {imports_module}::nodes::{pascal_name};")
+        output.append(f"{imports_module}::shvclient::impl_static_node! {{")
         output.append(f"    {pascal_name}(&self, request, client_cmd_tx) {{")
 
         for method_name in node.methods:
@@ -589,14 +608,14 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
     return "\n".join(output)
 
 
-def generate_metamethods_code(methods: Dict[str, Method]) -> str:
+def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 'crate') -> str:
     methods_with_access = {name: m for name, m in methods.items() if m.access}
     if not methods_with_access:
         return ""
 
     output = []
     output.append("pub mod metamethods {")
-    output.append("    use libshvgate::shvclient::shvrpc::metamethod::{MetaMethod, Flags, AccessLevel};")
+    output.append(f"    use {imports_module}::shvrpc::metamethod::{{MetaMethod, Flags, AccessLevel}};")
     output.append("")
 
     for method_name, method in methods_with_access.items():
@@ -656,7 +675,7 @@ def generate_metamethods_code(methods: Dict[str, Method]) -> str:
     return "\n".join(output)
 
 
-def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef]) -> str:
+def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, generate_tree_definition: bool = True, imports_module: str = 'crate') -> str:
     if not tree_data:
         return ""
 
@@ -694,9 +713,11 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
     for path in all_paths.keys():
         build_tree_from_path(path)
 
+    clientapi_path = f"{imports_module}::shvclient::clientapi"
+    shvrpc_path = f"{imports_module}::shvrpc"
+
     output = []
     output.append("pub mod tree {")
-    output.append("    use libshvgate::shvclient::clientapi::RpcCall;")
 
     def emit_method(method_name: str, depth: int) -> None:
         method = methods.get(method_name)
@@ -705,15 +726,16 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         func_name = method.method_name
         result_type = resolve_type(method.result or 'Null', types) if method.result else '()'
         param_type = resolve_type(method.param, types) if method.param else None
+        output.append(f"{'    ' * (depth)}use {imports_module}::api::*")
         error_type = "CallRpcMethodError"
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
             error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
         sig = f"{'    ' * depth}pub async fn {func_name}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
-        sig += f"client_tx: &ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
+        sig += f"client_tx: &{clientapi_path}::ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
-        output.append(f"{'    ' * (depth+1)}RpcCall::new(shvrpc::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
+        output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
         if param_type:
             output.append(f"{'    ' * (depth+1)}    .param(param)")
         output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
@@ -730,8 +752,9 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             node_def = nodes_data.get(all_paths.get(full_path))
             if node_def and node_def.methods:
                 output.append(f"{'    ' * (depth+1)}pub const NODE_PATH: &str = \"{full_path}\";")
-                for mn in node_def.methods:
-                    emit_method(mn, depth + 1)
+                if generate_client:
+                    for mn in node_def.methods:
+                        emit_method(mn, depth + 1)
             if isinstance(val, dict):
                 render_module(val, full_path, depth + 1)
             output.append(f"{'    ' * depth}}}")
@@ -739,31 +762,32 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
     render_module(tree, "", 1)
     output.append("}")
 
-    paths_with_methods = {}
-    for path, type_name in all_paths.items():
-        node_def = nodes_data.get(type_name)
-        if node_def and node_def.methods:
-            paths_with_methods[path] = node_def.methods
+    if generate_tree_definition:
+        paths_with_methods = {}
+        for path, type_name in all_paths.items():
+            node_def = nodes_data.get(type_name)
+            if node_def and node_def.methods:
+                paths_with_methods[path] = node_def.methods
 
-    if paths_with_methods:
-        output.append("")
-        output.append("pub fn tree_definition() -> libshvgate::ShvTreeDefinition {")
-        output.append("    let mut nodes_description = std::collections::BTreeMap::new();")
-        output.append("")
+        if paths_with_methods:
+            output.append("")
+            output.append(f"pub fn tree_definition() -> shvgate::ShvTreeDefinition {{")
+            output.append("    let mut nodes_description = std::collections::BTreeMap::new();")
+            output.append("")
 
-        for path in sorted(paths_with_methods.keys()):
-            meta_methods = ", ".join(f"metamethods::META_METHOD_{to_snake_case(m).upper()}" for m in paths_with_methods[path])
-            path_modules = "::".join(sanitize_module_name(s) for s in path.split('/'))
-            output.append(f'    nodes_description.insert(tree::{path_modules}::NODE_PATH.clone(), NodeDescription {{ methods: vec![{meta_methods}] }});')
+            for path in sorted(paths_with_methods.keys()):
+                meta_methods = ", ".join(f"metamethods::META_METHOD_{to_snake_case(m).upper()}" for m in paths_with_methods[path])
+                path_modules = "::".join(sanitize_module_name(s) for s in path.split('/'))
+                output.append(f'    nodes_description.insert(tree::{path_modules}::NODE_PATH.clone(), NodeDescription {{ methods: vec![{meta_methods}] }});')
 
-        output.append("")
-        output.append("    libshvgate::ShvTreeDefinition { nodes_description }")
-        output.append("}")
+            output.append("")
+            output.append(f"    shvgate::ShvTreeDefinition {{ nodes_description }}")
+            output.append("}")
 
     return "\n".join(output)
 
 
-def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, extern_imports: List[str] = None, tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None) -> str:
+def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, imports_module: str = 'crate', tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None, generate_client: bool = True, generate_static_tree: bool = True, generate_metamethods: bool = True, generate_shvgate_tree: bool = False) -> str:
     structs = []
     bitfields = []
     enums = []
@@ -804,9 +828,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     if maps:
         output.append("use std::collections::BTreeMap;")
 
-    for import_str in (extern_imports or []):
-        output.append(import_str)
-
+    output.append("")
+    output.append("// ============ External types imports ============")
+    for t in externs:
+        output.append(f'use {imports_module}::{t.name}')
     output.append("")
 
     output.append("// ============ Structs ============")
@@ -1021,24 +1046,25 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("")
 
     if methods:
-        methods_code = generate_methods_code(methods, types)
+        methods_code = generate_methods_code(methods, types, generate_client, imports_module)
         if methods_code:
             output.append("")
             output.append(methods_code)
 
-        metamethods_code = generate_metamethods_code(methods)
+    if methods and generate_metamethods:
+        metamethods_code = generate_metamethods_code(methods, imports_module)
         if metamethods_code:
             output.append("")
             output.append(metamethods_code)
 
     if tree_data or nodes_data:
-        tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types)
+        tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types, generate_client, generate_shvgate_tree, imports_module)
         if tree_code:
             output.append("")
             output.append(tree_code)
 
-    if nodes_data:
-        static_node_code = generate_static_node_code(nodes_data, methods or {}, types)
+    if nodes_data and generate_static_tree:
+        static_node_code = generate_static_node_code(nodes_data, methods or {}, types, imports_module)
         if static_node_code:
             output.append("")
             output.append(static_node_code)
@@ -1048,18 +1074,30 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SHV IDL to Rust code generator')
-    parser.add_argument('--newtype', action='store_true', help='Generate List/Map as newtype structs instead of type aliases')
-    parser.add_argument('--extern-import', action='append', dest='extern_imports', default=[],
-                        metavar='IMPORT_STR', help='Import string for an Extern type (repeatable)')
-    parser.add_argument('--tree', action='store_true', help='Generate tree/nodes module code')
+    parser.add_argument('--config', type=argparse.FileType('r'), required=True, help='YAML config file path')
     args = parser.parse_args()
 
     types, methods, tree_data, nodes_data = parse_yaml(sys.stdin)
+
+    components, imports_module, newtype_list_map = parse_config(args.config)
+
+    generate_client = 'client' in components
+    generate_static_tree = 'server-static' in components
+    generate_metamethods = 'server-dynamic' in components or 'server-gate' in components
+    generate_shvgate_tree = 'server-gate' in components
+
+    if not components:
+        generate_client = generate_static_tree = generate_dynamic = generate_gate = False
+
     code = generate_rust_code(
         types, methods,
-        newtype_list_map=args.newtype,
-        extern_imports=args.extern_imports,
-        tree_data=tree_data if args.tree else None,
-        nodes_data=nodes_data if args.tree else None,
+        newtype_list_map=newtype_list_map,
+        imports_module=imports_module,
+        tree_data=tree_data,
+        nodes_data=nodes_data,
+        generate_client=generate_client,
+        generate_static_tree=generate_static_tree,
+        generate_metamethods=generate_metamethods,
+        generate_shvgate_tree=generate_shvgate_tree,
     )
     print(code)
