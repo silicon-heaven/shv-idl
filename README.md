@@ -57,7 +57,7 @@ nodes:    # named node definitions (methods + subtree)
 | `Double`   | `f64`       | 64-bit floating point               |
 | `Decimal`  | `shvproto::Decimal` | Arbitrary precision decimal |
 | `String`   | `String`    | UTF-8 string                        |
-| `DateTime` | `i64`       | Unix timestamp (milliseconds)       |
+| `DateTime` | `shvproto::DateTime` | Unix timestamp (milliseconds)       |
 | `Blob`     | `Vec<u8>`   | Binary data                         |
 
 ### Struct

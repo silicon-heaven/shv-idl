@@ -14,7 +14,6 @@ PRIMITIVE_TYPES = {
     'Null': '()',
     'Int': 'i64',
     'Double': 'f64',
-    'DateTime': 'i64',
     'String': 'String',
     'Blob': 'Vec<u8>',
     'Bool': 'bool',
@@ -346,6 +345,8 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return 'f64'
     if type_name == 'Decimal':
         return f"{imports_module}::shvproto::Decimal"
+    if type_name == 'DateTime':
+        return f"{imports_module}::shvproto::DateTime"
 
     return type_name
 
