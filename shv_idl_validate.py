@@ -61,32 +61,62 @@ class Bitfield(BaseModel):
 
 class EnumType(BaseModel):
     type: Literal["Enum"]
-    variants: Optional[List[EnumVariant]] = None
-    fields: Optional[List[EnumVariant]] = None
+    variants: List[Union[str, EnumVariant]]
 
-    @model_validator(mode='after')
-    def check_xor(self):
-        if (self.variants is None) == (self.fields is None):
-            raise ValueError("Exactly one of 'variants' or 'fields' must be provided")
-        return self
+class ErrorType(BaseModel):
+    type: Literal["Error"]
+    variants: List[Union[str, EnumVariant]]
+
+class IntType(BaseModel):
+    type: Literal["Int"]
+    min: Optional[int] = None
+    max: Optional[int] = None
+
+class DoubleType(BaseModel):
+    type: Literal["Double"]
+    min: Optional[float] = None
+    max: Optional[float] = None
+
+class DecimalType(BaseModel):
+    type: Literal["Decimal"]
+    min: Optional[float] = None
+    max: Optional[float] = None
 
 class Extern(BaseModel):
     type: Literal["Extern"]
     import_rust: Optional[str] = None
     import_ts: Optional[str] = None
 
+class Method(BaseModel):
+    name: str
+    path_pattern: Optional[str] = None
+    param: Optional[str] = None
+    result: Optional[str] = None
+    error: Optional[str] = None
+    access: Optional[str] = None
+    isGetter: Optional[bool] = None
+    userIdRequired: Optional[bool] = None
+    signals: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+
+class NodeDef(BaseModel):
+    methods: Optional[List[str]] = None
+    tree: Optional[Dict[str, str]] = None
+
 BasicType = Annotated[
-    Union[Struct, UnionType, ListType, MapType, Bitfield, EnumType, Extern],
+    Union[Struct, UnionType, ListType, MapType, Bitfield, EnumType, ErrorType, IntType, DoubleType, DecimalType, Extern],
     Field(discriminator='type')
 ]
 
 class SHVSchema(BaseModel):
     types: Dict[str, BasicType]
-    methods: Optional[Dict[str, Any]] = None
+    methods: Optional[Dict[str, Method]] = None
+    tree: Optional[Dict[str, str]] = None
+    nodes: Optional[Dict[str, NodeDef]] = None
 
     @model_validator(mode='after')
     def validate_cross_references(self) -> 'SHVSchema':
-        basic_types = ['Null', 'Bool', 'Int', 'Double', 'DateTime', 'String', 'Blob', 'List', 'Map', 'IMap', 'Bitfield', 'Enum']
+        basic_types = ['Null', 'Bool', 'Int', 'Double', 'Decimal', 'DateTime', 'String', 'Blob', 'List', 'Map', 'IMap', 'Bitfield', 'Enum']
         defined_types = list(self.types.keys())
         all_types = basic_types + defined_types
         enum_types = [k for k, v in self.types.items() if isinstance(v, EnumType)]
@@ -118,6 +148,32 @@ class SHVSchema(BaseModel):
                 for f in definition.fields:
                     if f.type and f.type not in enum_types:
                         raise ValueError(f"Bitfield '{name}' field '{f.name}' must refer to an Enum. '{f.type}' is not an Enum.")
+
+        if self.methods:
+            for mname, method in self.methods.items():
+                if method.param and method.param not in all_types:
+                    raise ValueError(f"Method '{mname}' references unknown parameter type '{method.param}'")
+                if method.result and method.result not in all_types:
+                    raise ValueError(f"Method '{mname}' references unknown result type '{method.result}'")
+                if method.error and method.error not in all_types:
+                    raise ValueError(f"Method '{mname}' references unknown error type '{method.error}'")
+
+        if self.nodes:
+            for nname, node in self.nodes.items():
+                if node.methods:
+                    for mid in node.methods:
+                        if self.methods and mid not in self.methods:
+                            raise ValueError(f"Node '{nname}' references unknown method '{mid}'")
+                if node.tree:
+                    for path, child in node.tree.items():
+                        if child not in self.nodes:
+                            raise ValueError(f"Node '{nname}' tree child '{path}' references unknown node '{child}'")
+
+        if self.tree and self.nodes:
+            for path, node_name in self.tree.items():
+                if node_name not in self.nodes:
+                    raise ValueError(f"Tree entry '{path}' references unknown node '{node_name}'")
+
         return self
 
 def main():

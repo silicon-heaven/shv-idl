@@ -29,8 +29,7 @@ types:
       - name: firmwareVersion
         type_opt: String              # optional field
       - name: location
-        type: String
-        optional: true                # alternative way to mark optional
+        type_opt: String
 
   # ---------------------------------------------------------------------------
   # Union — discriminated union
