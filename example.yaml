@@ -1,0 +1,363 @@
+# =============================================================================
+# SHV IDL Example Schema
+# =============================================================================
+# Primitive types: Null, Bool, Int, Double, DateTime, String, Blob
+# Collection primitives: List, Map, IMap
+# Enum-like primitives: Bitfield, Enum
+#
+# Compound types: Struct, Union
+# Special types: Error, Extern
+# Constrained primitive wrappers: Int (newtype), Double (newtype)
+# =============================================================================
+
+types:
+
+  # ---------------------------------------------------------------------------
+  # Struct — named fields with optional support
+  # ---------------------------------------------------------------------------
+  # Use `type` for required fields, `type_opt` for optional fields.
+  # Equivalent: `optional: true` with `type` is also supported.
+  DeviceIdentity:
+    type: Struct
+    fields:
+      - name: vendor
+        type: String
+      - name: model
+        type: String
+      - name: serialNumber
+        type: String
+      - name: firmwareVersion
+        type_opt: String              # optional field
+      - name: location
+        type: String
+        optional: true                # alternative way to mark optional
+
+  # ---------------------------------------------------------------------------
+  # Union — discriminated union
+  # ---------------------------------------------------------------------------
+  # Externally tagged (default): each variant wraps its payload.
+  # Internally tagged: use `tag` key to name the discriminator field.
+  Measurement:
+    type: Union
+    variants:
+      - name: Scalar
+        type: Double
+      - name: Vector
+        type: MeasurementList
+      - name: Error                    # unit variant, no payload
+      - name: Unavailable
+
+  MeasurementList:
+    type: List
+    values: Double
+    maxSize: 128
+
+  ConfigValue:
+    type: Union
+    tag: type                          # internally tagged union
+    variants:
+      - name: Integer
+        type: Int
+      - name: Float
+        type: Double
+      - name: Text
+        type: String
+      - name: Boolean
+        type: Bool
+
+  # ---------------------------------------------------------------------------
+  # List — homogeneous array with optional max size
+  # ---------------------------------------------------------------------------
+  LogEntries:
+    type: List
+    values: LogEntry
+    maxSize: 10000
+
+  # ---------------------------------------------------------------------------
+  # Map — dictionary with optional values
+  # ---------------------------------------------------------------------------
+  # Use `values` for required values, `values_opt` for optional values.
+  TagDictionary:
+    type: Map
+    keys: String
+    values: String
+
+  MetadataMap:
+    type: Map
+    keys: String
+    values_opt: String                 # optional map values
+
+  # ---------------------------------------------------------------------------
+  # Enum — integer-based enumeration
+  # ---------------------------------------------------------------------------
+  # Variants can be specified with explicit integer values or auto-numbered
+  # (starting from 0). String-only variant syntax is also supported.
+  OperatingMode:
+    type: Enum
+    variants:
+      - value: 0
+        name: Idle
+      - value: 1
+        name: Active
+      - value: 2
+        name: Maintenance
+      - value: 3
+        name: Fault
+
+  AlertSeverity:
+    type: Enum
+    variants:
+      - Info
+      - Warning
+      - Critical
+      - Fatal
+
+  SignalColor:
+    type: Enum
+    variants:                          # shorthand: strings map to variant names
+      - Red
+      - Yellow
+      - Green
+
+  # ---------------------------------------------------------------------------
+  # Bitfield — bit-level field layout
+  # ---------------------------------------------------------------------------
+  # Fields can reference enum types or be plain bits.
+  # `bits` can be a single integer (single bit) or a [start, end] range.
+  DeviceStatus:
+    type: Bitfield
+    fields:
+      - bits: [0, 1]                  # bits 0..1 (2-bit range)
+        type: OperatingMode
+        name: mode
+      - bits: 2                        # single bit
+        name: alarmActive
+      - bits: [3, 4]
+        type: AlertSeverity
+        name: severity
+      - bits: 5
+        name: needsCalibration
+
+  ConnectionState:
+    type: Bitfield
+    fields:
+      - bits: 0
+        name: connected
+      - bits: 1
+        name: authenticated
+      - bits: 2
+        name: encrypted
+
+  # ---------------------------------------------------------------------------
+  # Error — error type with named variants for RPC error responses
+  # ---------------------------------------------------------------------------
+  DeviceError:
+    type: Error
+    variants:
+      - name: NotFound
+        value: 1
+      - name: NotReachable
+        value: 2
+      - name: Timeout
+      - name: InvalidOperation
+
+  ValidationError:
+    type: Error
+    variants:
+      - InvalidValue
+      - OutOfRange
+      - MissingField
+
+  # ---------------------------------------------------------------------------
+  # Extern — type defined outside the IDL (in Rust code)
+  # ---------------------------------------------------------------------------
+  CustomTimestamp:
+    type: Extern
+
+  SecureToken:
+    type: Extern
+
+  # ---------------------------------------------------------------------------
+  # Int — newtype integer with optional range constraints
+  # ---------------------------------------------------------------------------
+  Percentage:
+    type: Int
+    min: 0
+    max: 100
+
+  SignalStrength:
+    type: Int
+    min: 0
+
+  # ---------------------------------------------------------------------------
+  # Double — newtype float with optional range constraints
+  # ---------------------------------------------------------------------------
+  Temperature:
+    type: Double
+    min: -273.15
+
+  Voltage:
+    type: Double
+    min: 0
+    max: 1000
+
+  # ---------------------------------------------------------------------------
+  # Compound types used by methods below
+  # ---------------------------------------------------------------------------
+  LogEntry:
+    type: Struct
+    fields:
+      - name: timestamp
+        type: DateTime
+      - name: severity
+        type: AlertSeverity
+      - name: message
+        type: String
+      - name: source
+        type_opt: String
+
+  Configuration:
+    type: Struct
+    fields:
+      - name: values
+        type: TagDictionary
+      - name: version
+        type: Int
+      - name: lastModified
+        type: CustomTimestamp
+
+# =============================================================================
+# Methods — RPC method definitions
+# =============================================================================
+# Each method key is an ID used to reference it from nodes.
+# Fields:
+#   name         – RPC method name (e.g. "get", "set", "create")
+#   path_pattern – optional path template with {param} placeholders
+#   param        – parameter type (defaults to Null)
+#   result       – return type (defaults to Null)
+#   error        – optional error type
+#   access       – access level (bws, rd, wr, cmd, cfg, srv, ssrv, dev, su)
+#   isGetter     – whether this is a getter method
+#   userIdRequired – whether user ID is required
+#   signals      – map of signal names to optional signal param types
+#   description  – human-readable description
+# =============================================================================
+
+methods:
+
+  # Getter — a simple getter with no parameters
+  GetDeviceStatus:
+    name: get
+    result: DeviceStatus
+    access: rd
+    isGetter: true
+    userIdRequired: false
+    signals:
+      chng: null
+    description: "Returns the current device status bitfield."
+
+  # Getter with path parameter — get state of a named sensor
+  GetSensorMeasurement:
+    path_pattern: sensors/{sensorId}
+    name: get
+    param: String
+    result: Measurement
+    error: DeviceError
+    access: rd
+    isGetter: true
+    signals:
+      chng: null
+
+  # Setter — write configuration
+  SetConfiguration:
+    name: set
+    param: Configuration
+    result: Null
+    access: wr
+    userIdRequired: true
+    description: "Applies a new configuration to the device."
+
+  # Command — execute an action
+  RebootDevice:
+    name: command
+    param: String
+    result: Bool
+    access: cmd
+    description: "Reboots the device. Parameter: reason string."
+
+  # Method with path pattern and no parameter
+  GetLogs:
+    path_pattern: logs/{source}
+    name: get
+    result: LogEntries
+    access: rd
+    isGetter: true
+    signals:
+      chng: null
+
+  # Method with optional error type
+  DeleteLogs:
+    name: delete
+    result: Bool
+    access: wr
+    error: ValidationError
+    userIdRequired: true
+
+  # Method with no param, no error
+  GetIdentity:
+    name: get
+    result: DeviceIdentity
+    access: rd
+    isGetter: true
+
+# =============================================================================
+# Tree — path-to-type mappings (flattened)
+# =============================================================================
+# Each entry maps a SHV path prefix to a node type defined in `nodes` below.
+# The tree defines the static hierarchy.
+
+tree:
+  device: RootDevice
+  device/sensors/temperature: SensorNode
+  device/sensors/humidity: SensorNode
+  device/sensors/pressure: SensorNode
+  device/config: ConfigNode
+  device/logs: LogNode
+  device/identity: IdentityNode
+
+# =============================================================================
+# Nodes — named node definitions
+# =============================================================================
+# Each node groups a set of methods (by method ID) and optional subtree
+# references that are children of this node.
+
+nodes:
+  RootDevice:
+    methods:
+      - GetDeviceStatus
+      - RebootDevice
+    tree:
+      sensors/temperature: SensorNode
+      sensors/humidity: SensorNode
+      sensors/pressure: SensorNode
+      config: ConfigNode
+      logs: LogNode
+      identity: IdentityNode
+
+  SensorNode:
+    methods:
+      - GetSensorMeasurement
+
+  ConfigNode:
+    methods:
+      - SetConfiguration
+      - GetLogs
+
+  LogNode:
+    methods:
+      - GetLogs
+      - DeleteLogs
+
+  IdentityNode:
+    methods:
+      - GetIdentity
