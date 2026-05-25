@@ -726,7 +726,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         func_name = method.method_name
         result_type = resolve_type(method.result or 'Null', types) if method.result else '()'
         param_type = resolve_type(method.param, types) if method.param else None
-        output.append(f"{'    ' * (depth)}use {imports_module}::api::*")
+        output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
         error_type = "CallRpcMethodError"
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
             error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
