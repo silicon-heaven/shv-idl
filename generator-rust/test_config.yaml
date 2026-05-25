@@ -1,0 +1,8 @@
+components:
+  - client # tree with call functions, standalone call functions
+  - server-static # impl_static_node definitions
+  - server-dynamic # metamethods definition
+  - server-gate # metamethods definition, fn tree_definition() for libshvgate based apps
+
+imports_module: "crate::imports"
+newtype_list_map: false
