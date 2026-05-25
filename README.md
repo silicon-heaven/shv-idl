@@ -1,6 +1,6 @@
 # SHV IDL — Interface Definition Language for SHV RPC
 
-SHV IDL is a YAML-based format for defining data types, RPC methods, and device tree structures for the [Silicon Heaven](https://github.com/svkh/silicon-heaven) protocol. The definition is processed by `shv_idl_generate_rust.py` to produce Rust code: type definitions (with serde), client call functions, server static node dispatchers, dynamic meta-method constants, and tree definitions.
+SHV IDL is a YAML-based format for defining data types, RPC methods, and device tree structures for the [Silicon Heaven](https://github.com/svkh/silicon-heaven) protocol. The format is language-agnostic — language-specific generators produce native code from the same IDL. The **Rust generator** in [`generator-rust/`](./generator-rust/) produces type definitions (with serde), client call functions, server static node dispatchers, dynamic meta-method constants, and tree definitions.
 
 ---
 
@@ -25,8 +25,11 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
   - [Double](#double)
 - [Method Definition](#method-definition)
 - [Tree & Node System](#tree--node-system)
-- [Config File](#config-file)
-- [Generation Targets](#generation-targets)
+- [Generators](#generators)
+- [Rust](#rust)
+  - [Config File](#config-file)
+  - [Generation Targets](#generation-targets)
+  - [Usage](#usage)
 
 ---
 
@@ -301,9 +304,21 @@ nodes:
       - SetConfig
 ```
 
-## Config File
+## Generators
 
-A separate YAML config file controls code generation:
+Each language has its own generator in a `generator-<lang>/` directory:
+
+| Directory                           | Language | Status |
+|-------------------------------------|----------|--------|
+| [`generator-rust/`](./generator-rust/) | Rust     | Active |
+
+To add a new language, create a `generator-<lang>/` directory with a generator that reads the IDL YAML (the same schema as `example.yaml`) and emits the target language.
+
+### Rust
+
+#### Config File
+
+A separate YAML config file controls code generation for the Rust generator:
 
 ```yaml
 components:
@@ -312,11 +327,11 @@ components:
   - server-dynamic      # generate metamethods module
   - server-gate         # generate metamethods + tree_definition()
 
-imports_module: "crate"           # base path for Rust imports
+imports_module: "crate::imports"  # base path for Rust imports
 newtype_list_map: false           # wrap List/Map in newtypes (vs type aliases)
 ```
 
-## Generation Targets
+#### Generation Targets
 
 | Component        | Output                                                                 |
 |-----------------|------------------------------------------------------------------------|
@@ -327,11 +342,11 @@ newtype_list_map: false           # wrap List/Map in newtypes (vs type aliases)
 
 ---
 
-### Usage
+#### Usage
 
 ```bash
-# Pipe the IDL YAML with a config file
-cat my_definition.yaml | python3 shv_idl_generate_rust.py --config config.yaml > output.rs
+# Pipe the IDL YAML with a config file to the Rust generator
+cat my_definition.yaml | python3 generator-rust/shv_idl_generate_rust.py --config generator-rust/test_config.yaml > output.rs
 ```
 
 See [`example.yaml`](./example.yaml) for a complete worked example covering every construct.
