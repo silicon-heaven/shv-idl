@@ -23,6 +23,7 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
   - [Extern](#extern)
   - [Int](#int)
   - [Double](#double)
+  - [Decimal](#decimal)
 - [Method Definition](#method-definition)
 - [Tree & Node System](#tree--node-system)
 - [Generators](#generators)
@@ -54,6 +55,7 @@ nodes:    # named node definitions (methods + subtree)
 | `Bool`     | `bool`      |                                     |
 | `Int`      | `i64`       | 64-bit signed integer               |
 | `Double`   | `f64`       | 64-bit floating point               |
+| `Decimal`  | `shvproto::Decimal` | Arbitrary precision decimal |
 | `String`   | `String`    | UTF-8 string                        |
 | `DateTime` | `i64`       | Unix timestamp (milliseconds)       |
 | `Blob`     | `Vec<u8>`   | Binary data                         |
@@ -238,6 +240,21 @@ Voltage:
   min: 0
   max: 1000
 ```
+
+### Decimal
+
+Newtype wrapper around `shvproto::Decimal` with optional `min`/`max`
+constraints — same pattern as Int/Double, but validates via `.to_f64()`:
+
+```yaml
+PreciseValue:
+  type: Decimal
+  min: 0
+  max: 999999.99
+```
+
+Generates a struct with `TryFrom<Decimal>`, `TryFrom<&RpcValue>`, and `From`
+conversions, plus `#[serde(try_from = "...", into = "...")]`.
 
 ## Method Definition
 
