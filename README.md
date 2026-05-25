@@ -31,6 +31,7 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
   - [Config File](#config-file)
   - [Generation Targets](#generation-targets)
   - [Usage](#usage)
+- [Schema Generation](#schema-generation)
 
 ---
 
@@ -367,3 +368,19 @@ cat my_definition.yaml | python3 generator-rust/shv_idl_generate_rust.py --confi
 ```
 
 See [`example.yaml`](./example.yaml) for a complete worked example covering every construct.
+
+## Schema Generation
+
+To auto-generate a JSON Schema from the Pydantic validator:
+
+```bash
+python3 -c "
+import sys, json
+sys.path.insert(0, '.')
+from shv_idl_validate import SHVSchema
+schema = SHVSchema.model_json_schema()
+print(json.dumps(schema, indent=2))
+"
+```
+
+This produces a complete structural schema covering all 11 type variants, methods, and nodes. Note that Pydantic's `model_validator` constraints (XOR on `type`/`type_opt` and `values`/`values_opt`) and cross-reference checks are not representable in JSON Schema and are omitted.
