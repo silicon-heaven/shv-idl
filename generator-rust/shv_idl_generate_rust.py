@@ -58,7 +58,12 @@ class ListType(TypeDef):
 
 @dataclass
 class MapType(TypeDef):
-    keys_type: str = 'String'
+    values_type: str = 'String'
+    values_optional: bool = False
+
+
+@dataclass
+class IMapType(TypeDef):
     values_type: str = 'String'
     values_optional: bool = False
 
@@ -214,7 +219,18 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
                 values_type = defn.get('values', 'String')
             types[name] = MapType(
                 name=name,
-                keys_type=defn.get('keys', 'String'),
+                values_type=values_type,
+                values_optional=values_optional
+            )
+
+        elif type_name == 'IMap':
+            values_optional = 'values_opt' in defn
+            if values_optional:
+                values_type = defn.get('values_opt', 'String')
+            else:
+                values_type = defn.get('values', 'String')
+            types[name] = IMapType(
+                name=name,
                 values_type=values_type,
                 values_optional=values_optional
             )
@@ -861,6 +877,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     enums = []
     lists = []
     maps = []
+    imaps = []
     unions = []
     externs = []
     ints = []
@@ -878,6 +895,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             lists.append(t)
         elif isinstance(t, MapType):
             maps.append(t)
+        elif isinstance(t, IMapType):
+            imaps.append(t)
         elif isinstance(t, UnionType):
             unions.append(t)
         elif isinstance(t, ExternType):
@@ -896,7 +915,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("use bitfield_struct::bitfield;")
     if enums:
         output.append("use bitfield_struct::bitenum;")
-    if maps:
+    if maps or imaps:
         output.append("use std::collections::BTreeMap;")
     if decimals:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
@@ -966,7 +985,6 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     output.append("")
 
     for mp in maps:
-        key_type = resolve_type(mp.keys_type, types, imports_module)
         val_type = resolve_type(mp.values_type, types, imports_module)
         mp_name = to_pascal_case(mp.name)
         if mp.values_optional:
@@ -974,9 +992,25 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         if newtype_list_map:
             output.append("#[derive(Debug, Clone, Serialize, Deserialize, shvproto::FromRpcValue, shvproto::ToRpcValue)]")
             output.append('#[serde(transparent)]')
-            output.append(f"pub struct {mp_name}(pub BTreeMap<{key_type}, {val_type}>);")
+            output.append(f"pub struct {mp_name}(pub BTreeMap<String, {val_type}>);")
         else:
-            output.append(f"pub type {mp_name} = BTreeMap<{key_type}, {val_type}>;")
+            output.append(f"pub type {mp_name} = BTreeMap<String, {val_type}>;")
+        output.append("")
+
+    output.append("// ============ IMaps ============")
+    output.append("")
+
+    for mp in imaps:
+        val_type = resolve_type(mp.values_type, types, imports_module)
+        mp_name = to_pascal_case(mp.name)
+        if mp.values_optional:
+            val_type = f"Option<{val_type}>"
+        if newtype_list_map:
+            output.append("#[derive(Debug, Clone, Serialize, Deserialize, shvproto::FromRpcValue, shvproto::ToRpcValue)]")
+            output.append('#[serde(transparent)]')
+            output.append(f"pub struct {mp_name}(pub BTreeMap<i32, {val_type}>);")
+        else:
+            output.append(f"pub type {mp_name} = BTreeMap<i32, {val_type}>;")
         output.append("")
 
     output.append("// ============ Unions ============")

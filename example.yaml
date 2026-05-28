@@ -78,12 +78,18 @@ types:
   # Use `values` for required values, `values_opt` for optional values.
   TagDictionary:
     type: Map
-    keys: String
     values: String
 
   MetadataMap:
     type: Map
-    keys: String
+    values_opt: String                 # optional map values
+
+  IndexedValues:
+    type: IMap
+    values: String
+
+  OptionalIndexed:
+    type: IMap
     values_opt: String                 # optional map values
 
   # ---------------------------------------------------------------------------

@@ -128,21 +128,37 @@ By default generates `type SampleBuffer = Vec<f64>`. With `newtype_list_map: tru
 
 ### Map
 
-Dictionary with string keys. Values can be required or optional:
+Dictionary with string keys (always `String`). Values can be required or optional:
 
 ```yaml
 # Required values
 Attributes:
   type: Map
-  keys: String
   values: String
 
 # Optional values
 Metadata:
   type: Map
-  keys: String
   values_opt: String           # values are Option<String>
 ```
+
+### IMap
+
+Dictionary with integer keys (`i32` in Rust). Same value patterns as Map:
+
+```yaml
+# Required values
+IndexedValues:
+  type: IMap
+  values: String
+
+# Optional values
+OptionalIndexed:
+  type: IMap
+  values_opt: String           # values are Option<String>
+```
+
+Generates `BTreeMap<i32, T>` in Rust.
 
 ### Enum
 

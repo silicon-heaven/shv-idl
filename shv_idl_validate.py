@@ -45,7 +45,17 @@ class ListType(BaseModel):
 
 class MapType(BaseModel):
     type: Literal["Map"]
-    keys: str
+    values: Optional[str] = None
+    values_opt: Optional[str] = None
+
+    @model_validator(mode='after')
+    def check_xor(self):
+        if (self.values is None) == (self.values_opt is None):
+            raise ValueError("Exactly one of 'values' or 'values_opt' must be provided")
+        return self
+
+class IMapType(BaseModel):
+    type: Literal["IMap"]
     values: Optional[str] = None
     values_opt: Optional[str] = None
 
@@ -118,7 +128,7 @@ class NodeDef(BaseModel):
     tree: Optional[Dict[str, str]] = None
 
 BasicType = Annotated[
-    Union[Struct, UnionType, ListType, MapType, Bitfield, EnumType, ErrorType, IntType, DoubleType, DecimalType, Extern],
+    Union[Struct, UnionType, ListType, MapType, IMapType, Bitfield, EnumType, ErrorType, IntType, DoubleType, DecimalType, Extern],
     Field(discriminator='type')
 ]
 
@@ -155,6 +165,11 @@ class SHVSchema(BaseModel):
                     raise ValueError(f"Map '{name}' references unknown type '{definition.values}'")
                 if definition.values_opt and definition.values_opt not in all_types:
                     raise ValueError(f"Map '{name}' references unknown type '{definition.values_opt}'")
+            if isinstance(definition, IMapType):
+                if definition.values and definition.values not in all_types:
+                    raise ValueError(f"IMap '{name}' references unknown type '{definition.values}'")
+                if definition.values_opt and definition.values_opt not in all_types:
+                    raise ValueError(f"IMap '{name}' references unknown type '{definition.values_opt}'")
             if isinstance(definition, ListType):
                 if definition.values not in all_types:
                     raise ValueError(f"List '{name}' references unknown type '{definition.values}'")
