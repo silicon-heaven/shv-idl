@@ -955,7 +955,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         val_type = resolve_type(lst.values_type, types, imports_module)
         lst_name = to_pascal_case(lst.name)
         if newtype_list_map:
-            output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
+            output.append("#[derive(Debug, Clone, Serialize, Deserialize, shvproto::FromRpcValue, shvproto::ToRpcValue)]")
             output.append('#[serde(transparent)]')
             output.append(f"pub struct {lst_name}(pub Vec<{val_type}>);")
         else:
@@ -972,7 +972,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         if mp.values_optional:
             val_type = f"Option<{val_type}>"
         if newtype_list_map:
-            output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
+            output.append("#[derive(Debug, Clone, Serialize, Deserialize, shvproto::FromRpcValue, shvproto::ToRpcValue)]")
             output.append('#[serde(transparent)]')
             output.append(f"pub struct {mp_name}(pub BTreeMap<{key_type}, {val_type}>);")
         else:
