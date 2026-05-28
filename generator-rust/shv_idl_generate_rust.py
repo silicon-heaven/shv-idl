@@ -109,6 +109,7 @@ class Method:
     method_name: Optional[str] = None
     param: Optional[str] = None
     result: Optional[str] = None
+    result_opt: Optional[str] = None
     error: Optional[str] = None
     access: Optional[str] = None
     is_getter: bool = False
@@ -302,6 +303,7 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
             method_name=defn.get('name'),
             param=defn.get('param'),
             result=defn.get('result'),
+            result_opt=defn.get('result_opt'),
             error=defn.get('error'),
             access=defn.get('access'),
             is_getter=parse_bool(defn.get('isGetter')),
@@ -399,6 +401,8 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             error_types.add(m.error)
         if m.result:
             result_types.add(m.result)
+        if m.result_opt:
+            result_types.add(m.result_opt)
 
     if result_types:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
@@ -505,7 +509,13 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             if method.path_pattern:
                 path_params = extract_path_params(method.path_pattern)
 
-            result_type = resolve_type(method.result or 'Null', types, imports_module) if method.result else "()"
+            if method.result_opt:
+                inner = resolve_type(method.result_opt, types, imports_module)
+                result_type = f"Option<{inner}>"
+            elif method.result:
+                result_type = resolve_type(method.result, types, imports_module)
+            else:
+                result_type = "()"
             error_type = None
             if method.error and method.error in types and isinstance(types[method.error], ErrorType):
                 error_type = to_pascal_case(method.error)
@@ -597,6 +607,10 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
                 result_type = method.result
                 if method.error:
                     result_type = f"{result_type}|{to_pascal_case(method.error)}"
+            elif method.result_opt:
+                result_type = method.result_opt
+                if method.error:
+                    result_type = f"{result_type}|Null|{to_pascal_case(method.error)}"
             else:
                 result_type = "Null"
 
@@ -660,6 +674,10 @@ def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 
             result_type = method.result
             if method.error:
                 result_type = f"{result_type}|{to_pascal_case(method.error)}"
+        elif method.result_opt:
+            result_type = method.result_opt
+            if method.error:
+                result_type = f"{result_type}|Null|{to_pascal_case(method.error)}"
         else:
             result_type = "Null"
 
@@ -740,7 +758,13 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         if not method:
             return
         func_name = method.method_name
-        result_type = resolve_type(method.result or 'Null', types, imports_module) if method.result else '()'
+        if method.result_opt:
+            inner = resolve_type(method.result_opt, types, imports_module)
+            result_type = f"Option<{inner}>"
+        elif method.result:
+            result_type = resolve_type(method.result, types, imports_module)
+        else:
+            result_type = '()'
         param_type = resolve_type(method.param, types, imports_module) if method.param else None
         output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
         error_type = "CallRpcMethodError"

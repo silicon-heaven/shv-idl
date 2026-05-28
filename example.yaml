@@ -242,6 +242,7 @@ types:
 #   path_pattern – optional path template with {param} placeholders
 #   param        – parameter type (defaults to Null)
 #   result       – return type (defaults to Null)
+#   result_opt   – return type wrapped in Option (mutually exclusive with result)
 #   error        – optional error type
 #   access       – access level (bws, rd, wr, cmd, cfg, srv, ssrv, dev, su)
 #   isGetter     – whether this is a getter method
@@ -317,6 +318,16 @@ methods:
     access: rd
     isGetter: true
 
+  # Method with optional result — may return Null
+  GetOptionalConfig:
+    name: get
+    result_opt: Configuration
+    access: rd
+    isGetter: true
+    signals:
+      chng: null
+    description: "Returns optional configuration."
+
 # =============================================================================
 # Tree — path-to-type mappings (flattened)
 # =============================================================================
@@ -359,6 +370,7 @@ nodes:
     methods:
       - SetConfiguration
       - GetLogs
+      - GetOptionalConfig
 
   LogNode:
     methods:

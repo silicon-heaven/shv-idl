@@ -275,6 +275,16 @@ methods:
     description: "Returns a measurement."
 ```
 
+Use `result_opt` instead of `result` when the method may return `Null` — the generator wraps the type in an `Option`. The two keys are mutually exclusive:
+
+```yaml
+  GetOptional:
+    name: get
+    result_opt: Measurement         # returns Option<Measurement>
+    access: rd
+    isGetter: true
+```
+
 ### Access Levels
 
 | Key   | Rust Enum Variant |
