@@ -407,9 +407,9 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
 
     if result_types:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
-    if error_types:
-        output.append(f"use {imports_module}::shvclient::clientapi::{{RpcError, CallRpcMethodError, CallRpcMethodErrorKind}};")
-        output.append(f"use {imports_module}::shvrpc::rpcmessage::{{RpcErrorCodeKind, USER_ERROR_CODE_DEFAULT}};")
+    if generate_client or error_types:
+        output.append(f"use {imports_module}::shvclient::clientapi::{{CallRpcMethodError, CallRpcMethodErrorKind}};")
+        output.append(f"use {imports_module}::shvrpc::rpcmessage::{{RpcError, RpcErrorCodeKind, USER_ERROR_CODE_DEFAULT}};")
 
     output.append("")
     output.append("// ============ Result type conversions ============")
@@ -794,7 +794,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         sig += f"client_tx: &{clientapi_path}::ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
         if method.param_opt:
-            output.append(f"{'    ' * (depth+1)}let rpc_call = {clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\");")
+            output.append(f"{'    ' * (depth+1)}let rpc_call = {clientapi_path}::RpcCall::new(&{shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\");")
             output.append(f"{'    ' * (depth+1)}let rpc_call = if let Some(val) = param {{")
             output.append(f"{'    ' * (depth+1)}    rpc_call.param(val)")
             output.append(f"{'    ' * (depth+1)}}} else {{")
@@ -803,7 +803,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}rpc_call.exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
         else:
-            output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
+            output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new(&{shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
             if param_type:
                 output.append(f"{'    ' * (depth+1)}    .param(param)")
             output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
