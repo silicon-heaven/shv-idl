@@ -8,7 +8,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, TextIO
 
-yaml.add_constructor('tag:yaml.org,2002:bool', lambda loader, node: node.value, Loader=yaml.SafeLoader)
 
 PRIMITIVE_TYPES = {
     'Null': '()',
