@@ -285,6 +285,16 @@ Use `result_opt` instead of `result` when the method may return `Null` — the g
     isGetter: true
 ```
 
+Use `param_opt` instead of `param` when the method accepts `Null` as a parameter — the generator wraps the type in an `Option`. The two keys are mutually exclusive:
+
+```yaml
+  SetOptional:
+    name: set
+    param_opt: Configuration        # accepts Option<Configuration>
+    result: Null
+    access: wr
+```
+
 ### Access Levels
 
 | Key   | Rust Enum Variant |

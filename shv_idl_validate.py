@@ -91,6 +91,7 @@ class Method(BaseModel):
     name: str
     path_pattern: Optional[str] = None
     param: Optional[str] = None
+    param_opt: Optional[str] = None
     result: Optional[str] = None
     result_opt: Optional[str] = None
     error: Optional[str] = None
@@ -104,6 +105,12 @@ class Method(BaseModel):
     def check_result_xor(self):
         if self.result is not None and self.result_opt is not None:
             raise ValueError("'result' and 'result_opt' are mutually exclusive")
+        return self
+
+    @model_validator(mode='after')
+    def check_param_xor(self):
+        if self.param is not None and self.param_opt is not None:
+            raise ValueError("'param' and 'param_opt' are mutually exclusive")
         return self
 
 class NodeDef(BaseModel):
@@ -160,6 +167,8 @@ class SHVSchema(BaseModel):
             for mname, method in self.methods.items():
                 if method.param and method.param not in all_types:
                     raise ValueError(f"Method '{mname}' references unknown parameter type '{method.param}'")
+                if method.param_opt and method.param_opt not in all_types:
+                    raise ValueError(f"Method '{mname}' references unknown parameter type '{method.param_opt}'")
                 if method.result and method.result not in all_types:
                     raise ValueError(f"Method '{mname}' references unknown result type '{method.result}'")
                 if method.result_opt and method.result_opt not in all_types:

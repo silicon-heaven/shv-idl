@@ -241,6 +241,7 @@ types:
 #   name         – RPC method name (e.g. "get", "set", "create")
 #   path_pattern – optional path template with {param} placeholders
 #   param        – parameter type (defaults to Null)
+#   param_opt    – parameter type wrapped in Option (mutually exclusive with param)
 #   result       – return type (defaults to Null)
 #   result_opt   – return type wrapped in Option (mutually exclusive with result)
 #   error        – optional error type
@@ -328,6 +329,14 @@ methods:
       chng: null
     description: "Returns optional configuration."
 
+  # Method with optional parameter — accepts Null
+  SetOptionalParam:
+    name: set
+    param_opt: Configuration
+    result: Null
+    access: wr
+    description: "Sets configuration. Parameter may be Null."
+
 # =============================================================================
 # Tree — path-to-type mappings (flattened)
 # =============================================================================
@@ -371,6 +380,7 @@ nodes:
       - SetConfiguration
       - GetLogs
       - GetOptionalConfig
+      - SetOptionalParam
 
   LogNode:
     methods:

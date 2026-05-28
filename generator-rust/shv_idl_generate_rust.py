@@ -107,6 +107,7 @@ class Method:
     path_pattern: Optional[str] = None
     method_name: Optional[str] = None
     param: Optional[str] = None
+    param_opt: Optional[str] = None
     result: Optional[str] = None
     result_opt: Optional[str] = None
     error: Optional[str] = None
@@ -301,6 +302,7 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
             path_pattern=defn.get('path_pattern'),
             method_name=defn.get('name'),
             param=defn.get('param'),
+            param_opt=defn.get('param_opt'),
             result=defn.get('result'),
             result_opt=defn.get('result_opt'),
             error=defn.get('error'),
@@ -529,6 +531,9 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             if method.param:
                 param_type = resolve_type(method.param, types, imports_module)
                 output.append(f"    param: {param_type},")
+            elif method.param_opt:
+                param_type = resolve_type(method.param_opt, types, imports_module)
+                output.append(f"    param: Option<{param_type}>,")
             output.append("    client_tx: &ClientCommandSender,")
             output.append(f") -> Result<{result_type}, {error_type_with_generic}>")
             output.append("{")
@@ -542,6 +547,12 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"    let rpc_call = RpcCall::new(&path, \"{method_name}\");")
             if method.param:
                 output.append("    let rpc_call = rpc_call.param(param);")
+            elif method.param_opt:
+                output.append("    let rpc_call = if let Some(val) = param {")
+                output.append("        rpc_call.param(val)")
+                output.append("    } else {")
+                output.append("        rpc_call")
+                output.append("    };")
             output.append("    rpc_call.exec(client_tx)")
             output.append("        .await")
             if error_type:
@@ -594,12 +605,15 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
 
             access_str = ACCESS_MAP.get(method.access, "Read")
 
-            param_type = method.param or "Null"
+            param_type = method.param or method.param_opt or "Null"
 
             param_str = ""
             args_str = "request, client_cmd_tx"
             if method.param:
                 param_str = f' (param: {resolve_type(param_type, types, imports_module)})'
+                args_str = "request, param, client_cmd_tx"
+            elif method.param_opt:
+                param_str = f' (param: Option<{resolve_type(param_type, types, imports_module)}>)'
                 args_str = "request, param, client_cmd_tx"
 
             if method.result:
@@ -624,6 +638,8 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
                 signals_str = " { " + ", ".join(signal_items) + " }"
 
             snake_name = to_snake_case(method_name)
+
+            param_type = method.param if method.param else (f"{method.param_opt}|Null" if method.param_opt else "Null")
 
             output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{param_str}{signals_str} => {{')
             output.append(f"            self.{snake_name}({args_str}).await")
@@ -667,7 +683,7 @@ def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 
 
         access_str = f'AccessLevel::{ACCESS_MAP.get(method.access, "Read")}'
 
-        param_type = method.param if method.param else "Null"
+        param_type = method.param if method.param else (f"{method.param_opt}|Null" if method.param_opt else "Null")
 
         if method.result:
             result_type = method.result
@@ -765,6 +781,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         else:
             result_type = '()'
         param_type = resolve_type(method.param, types, imports_module) if method.param else None
+        param_opt_type = resolve_type(method.param_opt, types, imports_module) if method.param_opt else None
         output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
         error_type = "CallRpcMethodError"
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
@@ -772,13 +789,25 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         sig = f"{'    ' * depth}pub async fn {func_name}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
+        if param_opt_type:
+            sig += f"param: Option<{param_opt_type}>, "
         sig += f"client_tx: &{clientapi_path}::ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
-        output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
-        if param_type:
-            output.append(f"{'    ' * (depth+1)}    .param(param)")
-        output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
-        output.append(f"{'    ' * (depth+1)}    .await")
+        if method.param_opt:
+            output.append(f"{'    ' * (depth+1)}let rpc_call = {clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\");")
+            output.append(f"{'    ' * (depth+1)}let rpc_call = if let Some(val) = param {{")
+            output.append(f"{'    ' * (depth+1)}    rpc_call.param(val)")
+            output.append(f"{'    ' * (depth+1)}}} else {{")
+            output.append(f"{'    ' * (depth+1)}    rpc_call")
+            output.append(f"{'    ' * (depth+1)}}};")
+            output.append(f"{'    ' * (depth+1)}rpc_call.exec(client_tx)")
+            output.append(f"{'    ' * (depth+1)}    .await")
+        else:
+            output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new({shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
+            if param_type:
+                output.append(f"{'    ' * (depth+1)}    .param(param)")
+            output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
+            output.append(f"{'    ' * (depth+1)}    .await")
         if error_type != "CallRpcMethodError":
             output.append(f"{'    ' * (depth+1)}    .map_err(RpcCallError::from)")
         output.append(f"{'    ' * depth}}}")
