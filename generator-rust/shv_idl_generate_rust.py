@@ -451,6 +451,41 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("}")
             output.append("")
 
+    result_opt_types = set()
+    for m in methods.values():
+        if m.result_opt:
+            result_opt_types.add(m.result_opt)
+
+    if result_opt_types:
+        output.append("// ============ Optional result type wrappers ============")
+        output.append("")
+
+        for type_name in result_opt_types:
+            resolved = to_pascal_case(type_name)
+            opt_name = f"Option{resolved}"
+            output.append(f"pub struct {opt_name}(pub Option<{resolved}>);")
+            output.append("")
+            output.append(f"impl TryFrom<&RpcValue> for {opt_name} {{")
+            output.append("    type Error = String;")
+            output.append("")
+            output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+            output.append("        if value.is_null() {")
+            output.append(f"            Ok({opt_name}(None))")
+            output.append("        } else {")
+            output.append(f"            Ok({opt_name}(Some(value.try_into()?)))")
+            output.append("        }")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+            output.append(f"impl TryFrom<RpcValue> for {opt_name} {{")
+            output.append("    type Error = String;")
+            output.append("")
+            output.append("    fn try_from(value: RpcValue) -> Result<Self, Self::Error> {")
+            output.append("        (&value).try_into()")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+
     output.append("// ============ Error type annotations ============")
     output.append("")
 
@@ -578,6 +613,9 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
                 output.append("    };")
             output.append("    rpc_call.exec(client_tx)")
             output.append("        .await")
+            if method.result_opt:
+                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                output.append(f"        .map(|{opt_name}(opt)| opt)")
             if error_type:
                 output.append("        .map_err(RpcCallError::from)")
             output.append("}")
@@ -665,7 +703,7 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
             param_type = method.param if method.param else (f"{method.param_opt}|Null" if method.param_opt else "Null")
 
             output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{param_str}{signals_str} => {{')
-            output.append(f"            self.{snake_name}({args_str}).await")
+            output.append(f"            self.{snake_name}({args_str}).await.map(|res| res.map(RpcValue::from).map_err(RpcError::from))")
             output.append("        }")
             output.append("")
 
@@ -825,12 +863,18 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}}};")
             output.append(f"{'    ' * (depth+1)}rpc_call.exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
+            if method.result_opt:
+                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
         else:
             output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new(&{shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
             if param_type:
                 output.append(f"{'    ' * (depth+1)}    .param(param)")
             output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
+            if method.result_opt:
+                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
         if error_type != "CallRpcMethodError":
             output.append(f"{'    ' * (depth+1)}    .map_err(RpcCallError::from)")
         output.append(f"{'    ' * depth}}}")
