@@ -422,6 +422,8 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             result_types.add(m.result_opt)
         if m.param_opt:
             result_types.add(m.param_opt)
+        if m.param:
+            result_types.add(m.param)
 
     if result_types:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
@@ -430,7 +432,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
         output.append(f"use {imports_module}::shvrpc::rpcmessage::{{RpcError, RpcErrorCodeKind, USER_ERROR_CODE_DEFAULT}};")
 
     output.append("")
-    output.append("// ============ RpcValue to type conversions ============")
+    output.append("// ============ RpcValue from/to type conversions ============")
     output.append("")
 
     for type_name, ty in types.items():
@@ -449,6 +451,12 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("")
             output.append("    fn try_from(value: RpcValue) -> Result<Self, Self::Error> {")
             output.append("        (&value).try_into()")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+            output.append(f"impl From<{resolved}> for RpcValue {{")
+            output.append(f"    fn from(value: {resolved}) -> Self {{")
+            output.append("        shvproto::to_rpcvalue(&value).unwrap_or_else(|_| RpcValue::null())")
             output.append("    }")
             output.append("}")
             output.append("")
