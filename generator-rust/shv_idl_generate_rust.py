@@ -474,8 +474,9 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
 
         for type_name in opt_types:
             resolved = to_pascal_case(type_name)
+            inner = resolve_type(type_name, types, imports_module)
             opt_name = f"Option{resolved}"
-            output.append(f"pub struct {opt_name}(pub Option<{resolved}>);")
+            output.append(f"pub struct {opt_name}(pub Option<{inner}>);")
             output.append("")
             output.append(f"impl TryFrom<&RpcValue> for {opt_name} {{")
             output.append("    type Error = String;")
