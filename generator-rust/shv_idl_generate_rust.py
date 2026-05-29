@@ -420,6 +420,8 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             result_types.add(m.result)
         if m.result_opt:
             result_types.add(m.result_opt)
+        if m.param_opt:
+            result_types.add(m.param_opt)
 
     if result_types:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
@@ -451,16 +453,18 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("}")
             output.append("")
 
-    result_opt_types = set()
+    opt_types = set()
     for m in methods.values():
         if m.result_opt:
-            result_opt_types.add(m.result_opt)
+            opt_types.add(m.result_opt)
+        if m.param_opt:
+            opt_types.add(m.param_opt)
 
-    if result_opt_types:
-        output.append("// ============ Optional result type wrappers ============")
+    if opt_types:
+        output.append("// ============ Optional type wrappers ============")
         output.append("")
 
-        for type_name in result_opt_types:
+        for type_name in opt_types:
             resolved = to_pascal_case(type_name)
             opt_name = f"Option{resolved}"
             output.append(f"pub struct {opt_name}(pub Option<{resolved}>);")
@@ -674,8 +678,9 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
                 param_str = f' (param: {resolve_type(param_type, types, imports_module)})'
                 args_str = "request, param, client_cmd_tx"
             elif method.param_opt:
-                param_str = f' (param: Option<{resolve_type(param_type, types, imports_module)}>)'
-                args_str = "request, param, client_cmd_tx"
+                opt_name = f"Option{to_pascal_case(method.param_opt)}"
+                param_str = f' (param: {opt_name})'
+                args_str = "request, param.0, client_cmd_tx"
 
             if method.result:
                 result_type = method.result
