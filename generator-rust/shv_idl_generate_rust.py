@@ -855,7 +855,8 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         sig += f"client_tx: &{clientapi_path}::ClientCommandSender) -> Result<{result_type}, {error_type}> {{"
         output.append(sig)
         if method.param_opt:
-            output.append(f"{'    ' * (depth+1)}let rpc_call = {clientapi_path}::RpcCall::new(&{shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\");")
+            output.append(f"{'    ' * (depth+1)}let path = {shvrpc_path}::join_path!(mount_path, NODE_PATH);")
+            output.append(f"{'    ' * (depth+1)}let rpc_call = {clientapi_path}::RpcCall::new(&path, \"{func_name}\");")
             output.append(f"{'    ' * (depth+1)}let rpc_call = if let Some(val) = param {{")
             output.append(f"{'    ' * (depth+1)}    rpc_call.param(val)")
             output.append(f"{'    ' * (depth+1)}}} else {{")
@@ -867,7 +868,8 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
                 opt_name = f"Option{to_pascal_case(method.result_opt)}"
                 output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
         else:
-            output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new(&{shvrpc_path}::join_path!(mount_path, NODE_PATH), \"{func_name}\")")
+            output.append(f"{'    ' * (depth+1)}let path = {shvrpc_path}::join_path!(mount_path, NODE_PATH);")
+            output.append(f"{'    ' * (depth+1)}{clientapi_path}::RpcCall::new(&path, \"{func_name}\")")
             if param_type:
                 output.append(f"{'    ' * (depth+1)}    .param(param)")
             output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
