@@ -428,11 +428,10 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
         output.append(f"use {imports_module}::shvrpc::rpcmessage::{{RpcError, RpcErrorCodeKind, USER_ERROR_CODE_DEFAULT}};")
 
     output.append("")
-    output.append("// ============ Result type conversions ============")
+    output.append("// ============ RpcValue to type conversions ============")
     output.append("")
 
-    for type_name in result_types:
-        ty = types.get(type_name)
+    for type_name, ty in types.items():
         if isinstance(ty, (StructType, EnumType, UnionType, BitfieldType)):
             resolved = to_pascal_case(type_name)
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
@@ -440,6 +439,14 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("")
             output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
             output.append("        shvproto::from_rpcvalue(value).map_err(|e| e.to_string())")
+            output.append("    }")
+            output.append("}")
+            output.append("")
+            output.append(f"impl TryFrom<RpcValue> for {resolved} {{")
+            output.append("    type Error = String;")
+            output.append("")
+            output.append("    fn try_from(value: RpcValue) -> Result<Self, Self::Error> {")
+            output.append("        (&value).try_into()")
             output.append("    }")
             output.append("}")
             output.append("")
