@@ -1085,6 +1085,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
     for u in unions:
         output.append(f"#[derive(Debug, Clone, Serialize, Deserialize)]")
+        if u.tag:
+            output.append(f'#[serde(tag = "{u.tag}")]')
         u_name = to_pascal_case(u.name)
         output.append(f"pub enum {u_name} {{")
         for v in u.variants:
