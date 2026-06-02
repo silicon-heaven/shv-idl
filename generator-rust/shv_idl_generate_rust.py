@@ -861,7 +861,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         error_type = "CallRpcMethodError"
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
             error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
-        sig = f"{'    ' * depth}pub async fn {func_name}(mount_path: &str, "
+        sig = f"{'    ' * depth}pub async fn {to_snake_case(func_name)}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
         if param_opt_type:
