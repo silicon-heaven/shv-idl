@@ -162,6 +162,7 @@ RUST_KEYWORDS = {
 
 
 def sanitize_module_name(name: str) -> str:
+    name = name.replace('.', '_dot_').replace('-', '_')
     if name in RUST_KEYWORDS:
         return f'r#{name}'
     return name
