@@ -33,6 +33,10 @@ class Struct(BaseModel):
     type: Literal["Struct"]
     fields: List[StructField]
 
+class TupleType(BaseModel):
+    type: Literal["Tuple"]
+    fields: List[str]
+
 class UnionType(BaseModel):
     type: Literal["Union"]
     tag: Optional[str] = None
@@ -128,7 +132,7 @@ class NodeDef(BaseModel):
     tree: Optional[Dict[str, str]] = None
 
 BasicType = Annotated[
-    Union[Struct, UnionType, ListType, MapType, IMapType, Bitfield, EnumType, ErrorType, IntType, DoubleType, DecimalType, Extern],
+    Union[Struct, TupleType, UnionType, ListType, MapType, IMapType, Bitfield, EnumType, ErrorType, IntType, DoubleType, DecimalType, Extern],
     Field(discriminator='type')
 ]
 
@@ -152,6 +156,10 @@ class SHVSchema(BaseModel):
                         raise ValueError(f"Struct '{name}' field '{f.name}' references unknown type '{f.type}'")
                     if f.type_opt and f.type_opt not in all_types:
                         raise ValueError(f"Struct '{name}' field '{f.name}' references unknown type '{f.type_opt}'")
+            if isinstance(definition, TupleType):
+                for f in definition.fields:
+                    if f not in all_types:
+                        raise ValueError(f"Tuple '{name}' field references unknown type '{f}'")
             if isinstance(definition, UnionType):
                 for v in definition.variants:
                     if isinstance(v, str):

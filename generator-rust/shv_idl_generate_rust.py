@@ -45,6 +45,11 @@ class StructType(TypeDef):
 
 
 @dataclass
+class TupleType(TypeDef):
+    fields: List[str] = field(default_factory=list)
+
+
+@dataclass
 class UnionType(TypeDef):
     variants: List[Variant] = field(default_factory=list)
     tag: Optional[str] = None
@@ -191,6 +196,12 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
                     optional=is_optional
                 ))
             types[name] = StructType(name=name, fields=fields)
+
+        elif type_name == 'Tuple':
+            types[name] = TupleType(
+                name=name,
+                fields=defn.get('fields', [])
+            )
 
         elif type_name == 'Union':
             variants = []
@@ -437,7 +448,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
     output.append("")
 
     for type_name, ty in types.items():
-        if isinstance(ty, (StructType, EnumType, UnionType, BitfieldType)):
+        if isinstance(ty, (StructType, TupleType, EnumType, UnionType, BitfieldType)):
             resolved = to_pascal_case(type_name)
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
@@ -941,6 +952,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
 
 def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, imports_module: str = 'crate', tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None, generate_client: bool = True, generate_static_tree: bool = True, generate_metamethods: bool = True, generate_shvgate_tree: bool = False) -> str:
     structs = []
+    tuples = []
     bitfields = []
     enums = []
     lists = []
@@ -955,6 +967,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     for name, t in types.items():
         if isinstance(t, StructType):
             structs.append(t)
+        elif isinstance(t, TupleType):
+            tuples.append(t)
         elif isinstance(t, BitfieldType):
             bitfields.append(t)
         elif isinstance(t, EnumType):
@@ -1010,6 +1024,16 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             else:
                 output.append(f"    pub {field_name}: {rust_type},")
         output.append("}")
+        output.append("")
+
+    output.append("// ============ Tuples ============")
+    output.append("")
+
+    for t in tuples:
+        tuple_name = to_pascal_case(t.name)
+        fields = ", ".join(f"pub {resolve_type(field, types, imports_module)}" for field in t.fields)
+        output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
+        output.append(f"pub struct {tuple_name}({fields});")
         output.append("")
 
     output.append("// ============ Bitfields ============")

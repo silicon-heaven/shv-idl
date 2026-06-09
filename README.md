@@ -14,6 +14,7 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
 - [Type System](#type-system)
   - [Primitives](#primitives)
   - [Struct](#struct)
+  - [Tuple](#tuple)
   - [Union](#union)
   - [List](#list)
   - [Map](#map)
@@ -77,6 +78,26 @@ MyStruct:
       type: String
       optional: true         # optional — uses `optional` flag
 ```
+
+### Tuple
+
+Ordered fields without names. Use Tuple when the serialized shape is positional and field order carries meaning:
+
+```yaml
+GeoCoordinate:
+  type: Tuple
+  fields:
+    - Double
+    - Double
+
+TimedCoordinate:
+  type: Tuple
+  fields:
+    - DateTime
+    - GeoCoordinate
+```
+
+Generates a named Rust tuple struct, for example `pub struct GeoCoordinate(pub f64, pub f64)`.
 
 ### Union
 
@@ -419,4 +440,4 @@ print(json.dumps(schema, indent=2))
 "
 ```
 
-This produces a complete structural schema covering all 11 type variants, methods, and nodes. Note that Pydantic's `model_validator` constraints (XOR on `type`/`type_opt` and `values`/`values_opt`) and cross-reference checks are not representable in JSON Schema and are omitted.
+This produces a complete structural schema covering all 12 type variants, methods, and nodes. Note that Pydantic's `model_validator` constraints (XOR on `type`/`type_opt` and `values`/`values_opt`) and cross-reference checks are not representable in JSON Schema and are omitted.

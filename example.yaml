@@ -5,12 +5,23 @@
 # Collection primitives: List, Map, IMap
 # Enum-like primitives: Bitfield, Enum
 #
-# Compound types: Struct, Union
+# Compound types: Struct, Tuple, Union
 # Special types: Error, Extern
 # Constrained primitive wrappers: Int (newtype), Decimal (newtype), Double (newtype)
 # =============================================================================
 
 types:
+  GeoCoordinate:
+    type: Tuple
+    fields:
+      - Double
+      - Double
+
+  TimedCoordinate:
+    type: Tuple
+    fields:
+      - DateTime
+      - GeoCoordinate
 
   # ---------------------------------------------------------------------------
   # Struct — named fields with optional support
