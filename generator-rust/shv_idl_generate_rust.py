@@ -991,6 +991,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             decimals.append(t)
 
     output = []
+    output.append("#![allow(clippy::all, clippy::pedantic, clippy::restriction, clippy::nursery)]")
     output.append("use serde::{Serialize, Deserialize};")
 
     if bitfields:
