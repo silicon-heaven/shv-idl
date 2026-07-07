@@ -338,7 +338,7 @@ methods:
 
   # Method with optional result — may return Null
   GetOptionalConfig:
-    name: get
+    name: getConfig
     result_opt: Configuration
     access: rd
     isGetter: true
