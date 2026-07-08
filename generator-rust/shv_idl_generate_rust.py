@@ -1021,6 +1021,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             rust_type = resolve_type(f.type_name, types, imports_module)
             field_name = to_snake_case(f.name)
             if f.optional:
+                output.append('    #[serde(skip_serializing_if = "Option::is_none")]')
                 output.append(f"    pub {field_name}: Option<{rust_type}>,")
             else:
                 output.append(f"    pub {field_name}: {rust_type},")
