@@ -367,6 +367,9 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
     if type_name in PRIMITIVE_TYPES:
         return PRIMITIVE_TYPES[type_name]
 
+    if type_name in types and isinstance(types[type_name], ExternType):
+        return f"{imports_module}::{type_name}"
+
     if type_name in types:
         return to_pascal_case(type_name)
 
@@ -1002,10 +1005,6 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     if decimals:
         output.append(f"use {imports_module}::shvproto::RpcValue;")
 
-    output.append("")
-    output.append("// ============ External types imports ============")
-    for t in externs:
-        output.append(f'use {imports_module}::{t.name}')
     output.append("")
 
     output.append("// ============ Structs ============")
