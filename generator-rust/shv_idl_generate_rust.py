@@ -208,11 +208,11 @@ def parse_yaml(stream: TextIO) -> tuple[Dict[str, TypeDef], Dict[str, Method], D
             tag = defn.get('tag')
             for v in defn.get('variants', []):
                 if isinstance(v, str):
-                    variants.append(Variant(name=v, type_name=v))
+                    variants.append(Variant(name=v, type_name=None))
                 else:
                     variants.append(Variant(
                         name=v['name'],
-                        type_name=v.get('type')
+                        type_name=v.get('type', v['name'])
                     ))
             types[name] = UnionType(name=name, variants=variants, tag=tag)
 

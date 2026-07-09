@@ -163,11 +163,11 @@ class SHVSchema(BaseModel):
             if isinstance(definition, UnionType):
                 for v in definition.variants:
                     if isinstance(v, str):
-                        if v not in all_types:
-                            raise ValueError(f"Union '{name}' variant '{v}' references unknown type '{v}'")
+                        continue
                     elif isinstance(v, UnionVariant):
-                        if v.type and v.type not in all_types:
-                            raise ValueError(f"Union '{name}' variant '{v.name}' references unknown type '{v.type}'")
+                        variant_type = v.type or v.name
+                        if variant_type not in all_types:
+                            raise ValueError(f"Union '{name}' variant '{v.name}' references unknown type '{variant_type}'")
             if isinstance(definition, MapType):
                 if definition.values and definition.values not in all_types:
                     raise ValueError(f"Map '{name}' references unknown type '{definition.values}'")
