@@ -32,6 +32,10 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
   - [Config File](#config-file)
   - [Generation Targets](#generation-targets)
   - [Usage](#usage)
+- [TypeScript](#typescript)
+  - [Config File](#config-file-1)
+  - [Generation Targets](#generation-targets-1)
+  - [Usage](#usage-1)
 - [Schema Generation](#schema-generation)
 
 ---
@@ -51,16 +55,16 @@ nodes:    # named node definitions (methods + subtree)
 
 ### Primitives
 
-| IDL Type   | Rust Type   | Notes                               |
-|------------|-------------|-------------------------------------|
-| `Null`     | `()`        | Unit type                           |
-| `Bool`     | `bool`      |                                     |
-| `Int`      | `i64`       | 64-bit signed integer               |
-| `Double`   | `f64`       | 64-bit floating point               |
-| `Decimal`  | `shvproto::Decimal` | Arbitrary precision decimal |
-| `String`   | `String`    | UTF-8 string                        |
-| `DateTime` | `shvproto::DateTime` | Unix timestamp (milliseconds)       |
-| `Blob`     | `Vec<u8>`   | Binary data                         |
+| IDL Type   | Rust Type            | TypeScript Type | Notes                         |
+|------------|----------------------|-----------------|-------------------------------|
+| `Null`     | `()`                 | `undefined`     | Unit type                     |
+| `Bool`     | `bool`               | `boolean`       |                               |
+| `Int`      | `i64`                | `number`        | 64-bit signed integer         |
+| `Double`   | `f64`                | `Double`        | 64-bit floating point         |
+| `Decimal`  | `shvproto::Decimal`  | `Decimal`       | Arbitrary precision decimal   |
+| `String`   | `String`             | `string`        | UTF-8 string                  |
+| `DateTime` | `shvproto::DateTime` | `Date`          | Unix timestamp (milliseconds) |
+| `Blob`     | `Vec<u8>`            | `Blob`          | Binary data                   |
 
 ### Struct
 
@@ -386,6 +390,7 @@ Each language has its own generator in a `generator-<lang>/` directory:
 | Directory                           | Language | Status |
 |-------------------------------------|----------|--------|
 | [`generator-rust/`](./generator-rust/) | Rust     | Active |
+| [`generator-ts/`](./generator-ts/)     | TypeScript | Active |
 
 To add a new language, create a `generator-<lang>/` directory with a generator that reads the IDL YAML (the same schema as `example.yaml`) and emits the target language.
 
@@ -425,6 +430,32 @@ cat my_definition.yaml | python3 generator-rust/shv_idl_generate_rust.py --confi
 ```
 
 See [`example.yaml`](./example.yaml) for a complete worked example covering every construct.
+
+### TypeScript
+
+#### Config File
+
+A separate YAML config file controls code generation for the TypeScript generator:
+
+```yaml
+components:
+  - client                # generate createApi() RPC helpers
+```
+
+#### Generation Targets
+
+| Component | Output |
+|-----------|--------|
+| `client`  | Zod schemas + exported TS types + `createApi()` nested RPC helpers |
+
+---
+
+#### Usage
+
+```bash
+# Pipe the IDL YAML with a config file to the TypeScript generator
+cat my_definition.yaml | python3 generator-ts/shv_idl_generate_typescript.py --config my_ts_config.yaml > api.ts
+```
 
 ## Schema Generation
 
