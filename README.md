@@ -112,30 +112,31 @@ Discriminated union. **Externally tagged** by default (the variant name is the t
 Response:
   type: Union
   variants:
-    - name: Success
-      type: ResultData
+    - name: ResultData                   # payload type is implicitly ResultData
     - name: Error
       type: ErrorInfo
-    - name: Pending                     # unit variant, no payload
+    - Pending                           # plain string value, no payload
 
 # Internally tagged
 Command:
   type: Union
-  tag: cmd                              # adds a `type`-like discriminator field
+  tag: cmd                              # adds a `cmd` discriminator field
   variants:
     - name: Start
       type: StartParams
     - name: Stop
       type: StopParams
+    - Status                            # tag-only object, no payload
 ```
 
-Variants can also be shorthand strings (equivalent to unit variants):
+Union variants have three forms:
 
 ```yaml
   variants:
-    - Red
-    - Green
-    - Blue
+    - Offline                           # string form: plain string value, or tag-only object for internally tagged unions
+    - name: Reading                     # record without type: payload type is implicitly Reading
+    - name: Fault
+      type: ErrorInfo                   # record with type: payload type is ErrorInfo
 ```
 
 ### List
