@@ -613,7 +613,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"pub async fn call_{method_name_snake}(")
             output.append("    path_prefix: &str,")
             for p in path_params:
-                output.append(f"    {p}: &str,")
+                output.append(f"    {to_snake_case(p)}: &str,")
             if method.param:
                 param_type = resolve_type(method.param, types, imports_module)
                 output.append(f"    param: {param_type},")
@@ -626,7 +626,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             if method.path_pattern:
                 path_format = method.path_pattern
                 for p in path_params:
-                    path_format = path_format.replace(f"{{{p}}}", f"{{{p}}}")
+                    path_format = path_format.replace(f"{{{p}}}", f"{{{to_snake_case(p)}}}")
                 output.append(f"    let path = join_path!(path_prefix, format!(\"{path_format}\"));")
             else:
                 output.append("    let path = path_prefix.to_string();")
