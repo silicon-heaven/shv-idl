@@ -573,7 +573,7 @@ def generate_methods_code(
 
     def make_call_expr(method: Method, node_path: str) -> str:
         func_name = method_rpc_name(method)
-        path_expr = f"joinApiPath(basePath, {ts_string(node_path)})"
+        path_expr = f"makeApiPath({ts_string(node_path)})"
         if method.param:
             param_schema = f"{to_pascal_case(method.param)}Zod" if method.param in types else resolve_ts_type(method.param, types)
             call_expr = f"makeRpcCallParam({path_expr}, {ts_string(func_name)}, {param_schema}, "
@@ -688,14 +688,14 @@ def generate_methods_code(
             cursor = cursor[segment]
 
     out = []
-    out.append("export async function createApi(")
+    out.append("export function createApi(")
     out.append("    getBasePath: string | (() => string | Promise<string>),")
     out.append("    shv: Pick<ReturnType<typeof useShv>, 'makeRpcCall' | 'makeRpcCallParam'>,")
     out.append(") {")
     out.append("    const {makeRpcCall, makeRpcCallParam} = shv;")
-    out.append("    const basePath = await (typeof getBasePath === 'function' ? getBasePath() : getBasePath);")
-    out.append(r"""    const joinApiPath = (base: string, path: string): string => {
-        const baseNormalized = base.replaceAll(/^\/+|\/+$/gv, '');
+    out.append(r"""    const makeApiPath = async (path: string) => {
+        const basePath = await (typeof getBasePath === 'function' ? getBasePath() : getBasePath);
+        const baseNormalized = basePath.replaceAll(/^\/+|\/+$/gv, '');
         const pathNormalized = path.replaceAll(/^\/+|\/+$/gv, '');
 
         if (baseNormalized === '') {
