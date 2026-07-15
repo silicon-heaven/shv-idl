@@ -693,10 +693,25 @@ def generate_methods_code(
     out.append("    shv: Pick<ReturnType<typeof useShv>, 'makeRpcCall' | 'makeRpcCallParam'>,")
     out.append(") {")
     out.append("    const {makeRpcCall, makeRpcCallParam} = shv;")
-    out.append(r"""    const makeApiPath = async (path: string) => {
+    out.append(r"""    const normalizePath = (value: string) => {
+        let start = 0;
+        let end = value.length;
+
+        while (start < end && value[start] === '/') {
+            start += 1;
+        }
+
+        while (end > start && value[end - 1] === '/') {
+            end -= 1;
+        }
+
+        return value.slice(start, end);
+    };
+
+    const makeApiPath = async (path: string) => {
         const basePath = await (typeof getBasePath === 'function' ? getBasePath() : getBasePath);
-        const baseNormalized = basePath.replaceAll(/^\/+|\/+$/gv, '');
-        const pathNormalized = path.replaceAll(/^\/+|\/+$/gv, '');
+        const baseNormalized = normalizePath(basePath);
+        const pathNormalized = normalizePath(path);
 
         if (baseNormalized === '') {
             throw new Error('createApi: base path must not be empty');
