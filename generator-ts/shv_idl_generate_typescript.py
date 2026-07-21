@@ -689,7 +689,7 @@ def generate_methods_code(
 
     out = []
     out.append("export function createApi(")
-    out.append("    getBasePath: string | (() => string | Promise<string>),")
+    out.append("    getBasePath: () => string | Promise<string>,")
     out.append("    shv: Pick<ReturnType<typeof useShv>, 'makeRpcCall' | 'makeRpcCallParam'>,")
     out.append(") {")
     out.append("    const {makeRpcCall, makeRpcCallParam} = shv;")
@@ -709,7 +709,7 @@ def generate_methods_code(
     };
 
     const makeApiPath = async (path: string) => {
-        const basePath = await (typeof getBasePath === 'function' ? getBasePath() : getBasePath);
+        const basePath = await getBasePath();
         const baseNormalized = normalizePath(basePath);
         if (baseNormalized === '') {
             throw new Error('createApi: base path must not be empty');
