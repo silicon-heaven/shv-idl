@@ -711,11 +711,11 @@ def generate_methods_code(
     const makeApiPath = async (path: string) => {
         const basePath = await (typeof getBasePath === 'function' ? getBasePath() : getBasePath);
         const baseNormalized = normalizePath(basePath);
-        const pathNormalized = normalizePath(path);
-
         if (baseNormalized === '') {
             throw new Error('createApi: base path must not be empty');
         }
+
+        const pathNormalized = normalizePath(path);
 
         if (pathNormalized === '') {
             throw new Error('createApi: node path must not be empty');
