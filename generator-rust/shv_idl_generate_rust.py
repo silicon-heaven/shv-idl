@@ -417,7 +417,7 @@ def extract_path_params(path_pattern: str) -> List[str]:
 
 def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, imports_module: str = 'crate') -> str:
     if not methods:
-        return ""
+        return []
 
     output = []
 
@@ -649,7 +649,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("}")
             output.append("")
 
-    return "\n".join(output)
+    return output
 
 
 ACCESS_MAP = {
@@ -668,7 +668,7 @@ ACCESS_MAP = {
 def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], imports_module: str = 'crate') -> str:
     nodes_with_methods = {name: n for name, n in nodes_data.items() if n.methods}
     if not nodes_with_methods:
-        return ""
+        return []
 
     output = []
 
@@ -740,13 +740,13 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
         output.append("}")
         output.append("")
 
-    return "\n".join(output)
+    return output
 
 
 def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 'crate') -> str:
     methods_with_access = {name: m for name, m in methods.items() if m.access}
     if not methods_with_access:
-        return ""
+        return []
 
     output = []
     output.append("pub mod metamethods {")
@@ -811,12 +811,12 @@ def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 
         output.append("")
 
     output.append("}")
-    return "\n".join(output)
+    return output
 
 
 def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, generate_tree_definition: bool = True, imports_module: str = 'crate') -> str:
     if not tree_data:
-        return ""
+        return []
 
     all_paths = {}
 
@@ -950,7 +950,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"    shvgate::ShvTreeDefinition {{ nodes_description }}")
             output.append("}")
 
-    return "\n".join(output)
+    return output
 
 
 def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, imports_module: str = 'crate', tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None, generate_client: bool = True, generate_static_tree: bool = True, generate_metamethods: bool = True, generate_shvgate_tree: bool = False) -> str:
@@ -1303,25 +1303,25 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         methods_code = generate_methods_code(methods, types, generate_client, imports_module)
         if methods_code:
             output.append("")
-            output.append(methods_code)
+            output.extend(methods_code)
 
     if methods and generate_metamethods:
         metamethods_code = generate_metamethods_code(methods, imports_module)
         if metamethods_code:
             output.append("")
-            output.append(metamethods_code)
+            output.extend(metamethods_code)
 
     if tree_data or nodes_data:
         tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types, generate_client, generate_shvgate_tree, imports_module)
         if tree_code:
             output.append("")
-            output.append(tree_code)
+            output.extend(tree_code)
 
     if nodes_data and generate_static_tree:
         static_node_code = generate_static_node_code(nodes_data, methods or {}, types, imports_module)
         if static_node_code:
             output.append("")
-            output.append(static_node_code)
+            output.extend(static_node_code)
 
     return "\n".join(output)
 
