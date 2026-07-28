@@ -1139,7 +1139,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
     for e in enums:
         output.append("#[bitenum]")
-        output.append("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]")
+        output.append("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]")
         output.append("#[repr(u32)]")
         e_name = to_pascal_case(e.name)
         output.append(f"pub enum {e_name} {{")
