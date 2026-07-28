@@ -1,0 +1,7 @@
+components:
+  - client # tree with call functions, standalone call functions
+  - server-static # impl_static_node definitions
+  - server-dynamic # metamethods definition
+
+imports_module: "crate::imports"
+newtype_list_map: false
