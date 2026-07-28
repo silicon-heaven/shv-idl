@@ -1044,7 +1044,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
     for bf in bitfields:
         output.append(f"#[bitfield(u32)]")
-        output.append("#[derive(Clone, Serialize, Deserialize)]")
+        output.append("#[derive(Serialize, Deserialize)]")
         output.append('#[serde(from = "u32", into = "u32")]')
         bf_name = to_pascal_case(bf.name)
         output.append(f"pub struct {bf_name} {{")
