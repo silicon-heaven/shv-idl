@@ -1002,8 +1002,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("use bitfield_struct::bitenum;")
     if maps or imaps:
         output.append("use std::collections::BTreeMap;")
+
+    RPCVALUE_IMPORT_LINE = f"use {imports_module}::shvproto::RpcValue;"
     if decimals:
-        output.append(f"use {imports_module}::shvproto::RpcValue;")
+        output.append(RPCVALUE_IMPORT_LINE)
 
     output.append("")
 
@@ -1322,6 +1324,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         if static_node_code:
             output.append("")
             output.extend(static_node_code)
+
+    if RPCVALUE_IMPORT_LINE in output:
+        idx = output.index(RPCVALUE_IMPORT_LINE)
+        output = output[:idx + 1] + [line for line in output[idx + 1:] if line != RPCVALUE_IMPORT_LINE]
 
     return "\n".join(output)
 
