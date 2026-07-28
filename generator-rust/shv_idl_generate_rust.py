@@ -456,7 +456,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
             output.append("")
-            output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+            output.append(f"    fn try_from(value: &RpcValue) -> Result<Self, <{resolved} as TryFrom<&RpcValue>>::Error> {{")
             output.append("        shvproto::from_rpcvalue(value).map_err(|e| e.to_string())")
             output.append("    }")
             output.append("}")
@@ -464,7 +464,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"impl TryFrom<RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
             output.append("")
-            output.append("    fn try_from(value: RpcValue) -> Result<Self, Self::Error> {")
+            output.append(f"    fn try_from(value: RpcValue) -> Result<Self, <{resolved} as TryFrom<RpcValue>>::Error> {{")
             output.append("        (&value).try_into()")
             output.append("    }")
             output.append("}")
@@ -606,7 +606,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             error_type = None
             if method.error and method.error in types and isinstance(types[method.error], ErrorType):
                 error_type = to_pascal_case(method.error)
-                error_type_with_generic = f"RpcCallError<{error_type}>"
+                error_type_with_generic = f"RpcCallError<crate::{error_type}>"
             else:
                 error_type_with_generic = "CallRpcMethodError"
 
@@ -873,9 +873,10 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
         param_type = resolve_type(method.param, types, imports_module) if method.param else None
         param_opt_type = resolve_type(method.param_opt, types, imports_module) if method.param_opt else None
         output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
-        error_type = "CallRpcMethodError"
+        CALL_RPC_METHOD_ERROR = "crate::imports::shvclient::clientapi::CallRpcMethodError"
+        error_type = CALL_RPC_METHOD_ERROR
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
-            error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
+            error_type = f"crate::RpcCallError<crate::{to_pascal_case(method.error)}>"
         sig = f"{'    ' * depth}pub async fn {to_snake_case(func_name)}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
@@ -894,7 +895,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}rpc_call.exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
             if method.result_opt:
-                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                opt_name = f"crate::Option{to_pascal_case(method.result_opt)}"
                 output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
         else:
             output.append(f"{'    ' * (depth+1)}let path = {shvrpc_path}::join_path!(mount_path, NODE_PATH);")
@@ -904,10 +905,10 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
             if method.result_opt:
-                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                opt_name = f"crate::Option{to_pascal_case(method.result_opt)}"
                 output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
-        if error_type != "CallRpcMethodError":
-            output.append(f"{'    ' * (depth+1)}    .map_err(RpcCallError::from)")
+        if error_type != CALL_RPC_METHOD_ERROR:
+            output.append(f"{'    ' * (depth+1)}    .map_err(crate::RpcCallError::from)")
         output.append(f"{'    ' * depth}}}")
 
     def render_module(d: Dict, path_prefix: str, depth: int) -> None:
