@@ -371,7 +371,7 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return f"{imports_module}::{type_name}"
 
     if type_name in types:
-        return to_pascal_case(type_name)
+        return f'crate::{to_pascal_case(type_name)}'
 
     if type_name == 'Int':
         return 'i64'
