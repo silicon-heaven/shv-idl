@@ -1051,6 +1051,8 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
         layout = generate_bitfield_layout(bf.fields)
 
+        total_size = 0
+
         for field_name, field_type, start, size in layout:
             if field_name == '_':
                 dummy_name = f"_:_"
@@ -1058,6 +1060,11 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
             else:
                 resolved_type = resolve_type(field_type, types, imports_module)
                 output.append(f"    #[bits({size})] pub {to_snake_case(field_name)}: {resolved_type},")
+            total_size = total_size + size
+
+        if total_size != 32:
+            output.append(f"    #[bits({32 - total_size})] _padding: u32,")
+
 
         output.append("}")
         output.append("")
