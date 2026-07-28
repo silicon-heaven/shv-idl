@@ -156,9 +156,9 @@ dependencies = [
 
 [[package]]
 name = "bitfield-struct"
-version = "0.8.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de05f8756f1c68937349406d4632ae96ae35901019b5e59c508d9c38c64715fb"
+checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -423,13 +423,13 @@ dependencies = [
 
 [[package]]
 name = "displaydoc"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
+checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -1383,6 +1383,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 name = "shv-idl-test"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "bitfield-struct",
  "serde",
  "shvclient",
@@ -1416,15 +1417,16 @@ dependencies = [
 
 [[package]]
 name = "shvproto"
-version = "6.2.5"
+version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4109ab3521ce6f57e3097767aca6a9cefd2f46e0ffcfe03176bdc9b9b9cbbc57"
+checksum = "8e316ecbbe901706dc88a21813d382b2896f1223d5d3a1cd9e233b4e6e1d35f7"
 dependencies = [
  "chrono",
  "clap",
  "hex",
  "libshvproto-macros",
  "log",
+ "serde",
 ]
 
 [[package]]
