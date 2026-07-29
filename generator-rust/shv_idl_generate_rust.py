@@ -732,6 +732,7 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
             param_type = method.param if method.param else (f"{method.param_opt}|Null" if method.param_opt else "Null")
 
             output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{signals_str}{param_str} => {{')
+            output.append('            #[allow(clippy::useless_conversion, reason = "We need the mapping in case the implementation returns a custom return type.")]')
             output.append(f"            self.{snake_name}({args_str}).await.map(|res| res.map(Into::into).map_err(Into::into))")
             output.append("        }")
             output.append("")
