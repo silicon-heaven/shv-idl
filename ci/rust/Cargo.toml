@@ -1,0 +1,13 @@
+[package]
+name = "shv-idl-test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+bitfield-struct = "0.13"
+shvproto = {version = "6.3", features = ["serde"] }
+shvrpc = "19.0"
+shvclient = { version = "9.0", features = ["tokio"] }
+async-trait = "0.1.91"

@@ -2,12 +2,12 @@
 """SHV IDL Parser - Generate Rust code from SHV IDL YAML definition"""
 
 import argparse
-import sys
-import yaml
 import re
+import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, TextIO
+from typing import Dict, List, Optional, TextIO
 
+import yaml
 
 PRIMITIVE_TYPES = {
     'Null': '()',
@@ -363,7 +363,7 @@ def parse_config(stream) -> tuple:
     return components, imports_module, newtype_list_map
 
 
-def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str = 'crate') -> str:
+def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str = 'crate', **kwargs: int) -> str:
     if type_name in PRIMITIVE_TYPES:
         return PRIMITIVE_TYPES[type_name]
 
@@ -371,7 +371,9 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return f"{imports_module}::{type_name}"
 
     if type_name in types:
-        return to_pascal_case(type_name)
+        module_level = kwargs['module_level'] if 'module_level' in kwargs else 0
+        supers = "super::" * module_level
+        return f"{supers}{to_pascal_case(type_name)}"
 
     if type_name == 'Int':
         return 'i64'
@@ -383,7 +385,6 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return f"{imports_module}::shvproto::DateTime"
 
     return type_name
-
 
 def generate_bitfield_layout(fields: List[Field]) -> List[tuple]:
     layout = []
@@ -417,7 +418,7 @@ def extract_path_params(path_pattern: str) -> List[str]:
 
 def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, imports_module: str = 'crate') -> str:
     if not methods:
-        return ""
+        return []
 
     output = []
 
@@ -456,7 +457,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"impl TryFrom<&RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
             output.append("")
-            output.append("    fn try_from(value: &RpcValue) -> Result<Self, Self::Error> {")
+            output.append(f"    fn try_from(value: &RpcValue) -> Result<Self, <{resolved} as TryFrom<&RpcValue>>::Error> {{")
             output.append("        shvproto::from_rpcvalue(value).map_err(|e| e.to_string())")
             output.append("    }")
             output.append("}")
@@ -464,7 +465,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append(f"impl TryFrom<RpcValue> for {resolved} {{")
             output.append("    type Error = String;")
             output.append("")
-            output.append("    fn try_from(value: RpcValue) -> Result<Self, Self::Error> {")
+            output.append(f"    fn try_from(value: RpcValue) -> Result<Self, <{resolved} as TryFrom<RpcValue>>::Error> {{")
             output.append("        (&value).try_into()")
             output.append("    }")
             output.append("}")
@@ -521,14 +522,14 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
         if type_name in types and isinstance(types[type_name], ErrorType):
             error_type = types[type_name]
             resolved = to_pascal_case(type_name)
-            output.append(f"#[repr(u32)]")
+            output.append("#[repr(u32)]")
             output.append(f"pub enum {resolved} {{")
             for i, v in enumerate(error_type.variants):
                 v_name = to_pascal_case(v.name)
                 if v.value is not None:
                     output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {v.value},")
                 elif i == 0:
-                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {i},")
+                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT,")
                 else:
                     output.append(f"    {v_name},")
             output.append("}")
@@ -536,7 +537,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
 
             output.append(f"impl From<{resolved}> for RpcError {{")
             output.append(f"    fn from(value: {resolved}) -> Self {{")
-            output.append(f"        match value {{")
+            output.append("        match value {")
             for v in error_type.variants:
                 v_name = to_pascal_case(v.name)
                 output.append(f"            {resolved}::{v_name} => RpcError::new(value as u32, \"{v_name}\"),")
@@ -606,7 +607,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             error_type = None
             if method.error and method.error in types and isinstance(types[method.error], ErrorType):
                 error_type = to_pascal_case(method.error)
-                error_type_with_generic = f"RpcCallError<{error_type}>"
+                error_type_with_generic = f"RpcCallError<crate::{error_type}>"
             else:
                 error_type_with_generic = "CallRpcMethodError"
 
@@ -649,7 +650,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
             output.append("}")
             output.append("")
 
-    return "\n".join(output)
+    return output
 
 
 ACCESS_MAP = {
@@ -668,7 +669,7 @@ ACCESS_MAP = {
 def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], imports_module: str = 'crate') -> str:
     nodes_with_methods = {name: n for name, n in nodes_data.items() if n.methods}
     if not nodes_with_methods:
-        return ""
+        return []
 
     output = []
 
@@ -731,7 +732,8 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
 
             param_type = method.param if method.param else (f"{method.param_opt}|Null" if method.param_opt else "Null")
 
-            output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{param_str}{signals_str} => {{')
+            output.append(f'        "{method_str}" [{flags_str}, {access_str}, "{param_type}", "{result_type}"]{signals_str}{param_str} => {{')
+            output.append('            #[allow(clippy::useless_conversion, reason = "We need the mapping in case the implementation returns a custom return type.")]')
             output.append(f"            self.{snake_name}({args_str}).await.map(|res| res.map(Into::into).map_err(Into::into))")
             output.append("        }")
             output.append("")
@@ -740,13 +742,13 @@ def generate_static_node_code(nodes_data: Dict[str, NodeDef], methods: Dict[str,
         output.append("}")
         output.append("")
 
-    return "\n".join(output)
+    return output
 
 
 def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 'crate') -> str:
     methods_with_access = {name: m for name, m in methods.items() if m.access}
     if not methods_with_access:
-        return ""
+        return []
 
     output = []
     output.append("pub mod metamethods {")
@@ -811,12 +813,12 @@ def generate_metamethods_code(methods: Dict[str, Method], imports_module: str = 
         output.append("")
 
     output.append("}")
-    return "\n".join(output)
+    return output
 
 
 def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef], methods: Dict[str, Method], types: Dict[str, TypeDef], generate_client: bool = True, generate_tree_definition: bool = True, imports_module: str = 'crate') -> str:
     if not tree_data:
-        return ""
+        return []
 
     all_paths = {}
 
@@ -864,18 +866,18 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             return
         func_name = method.method_name
         if method.result_opt:
-            inner = resolve_type(method.result_opt, types, imports_module)
+            inner = resolve_type(method.result_opt, types, imports_module, module_level=depth)
             result_type = f"Option<{inner}>"
         elif method.result:
-            result_type = resolve_type(method.result, types, imports_module)
+            result_type = resolve_type(method.result, types, imports_module, module_level=depth)
         else:
             result_type = '()'
-        param_type = resolve_type(method.param, types, imports_module) if method.param else None
-        param_opt_type = resolve_type(method.param_opt, types, imports_module) if method.param_opt else None
-        output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
-        error_type = "CallRpcMethodError"
+        param_type = resolve_type(method.param, types, imports_module, module_level=depth) if method.param else None
+        param_opt_type = resolve_type(method.param_opt, types, imports_module, module_level=depth) if method.param_opt else None
+        CALL_RPC_METHOD_ERROR = "crate::imports::shvclient::clientapi::CallRpcMethodError"
+        error_type = CALL_RPC_METHOD_ERROR
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
-            error_type = f"RpcCallError<{to_pascal_case(method.error)}>"
+            error_type = f"crate::RpcCallError<crate::{to_pascal_case(method.error)}>"
         sig = f"{'    ' * depth}pub async fn {to_snake_case(func_name)}(mount_path: &str, "
         if param_type:
             sig += f"param: {param_type}, "
@@ -894,7 +896,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}rpc_call.exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
             if method.result_opt:
-                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                opt_name = f"crate::Option{to_pascal_case(method.result_opt)}"
                 output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
         else:
             output.append(f"{'    ' * (depth+1)}let path = {shvrpc_path}::join_path!(mount_path, NODE_PATH);")
@@ -904,10 +906,10 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             output.append(f"{'    ' * (depth+1)}    .exec(client_tx)")
             output.append(f"{'    ' * (depth+1)}    .await")
             if method.result_opt:
-                opt_name = f"Option{to_pascal_case(method.result_opt)}"
+                opt_name = f"crate::Option{to_pascal_case(method.result_opt)}"
                 output.append(f"{'    ' * (depth+1)}    .map(|{opt_name}(opt)| opt)")
-        if error_type != "CallRpcMethodError":
-            output.append(f"{'    ' * (depth+1)}    .map_err(RpcCallError::from)")
+        if error_type != CALL_RPC_METHOD_ERROR:
+            output.append(f"{'    ' * (depth+1)}    .map_err(crate::RpcCallError::from)")
         output.append(f"{'    ' * depth}}}")
 
     def render_module(d: Dict, path_prefix: str, depth: int) -> None:
@@ -937,7 +939,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
 
         if paths_with_methods:
             output.append("")
-            output.append(f"pub fn tree_definition() -> shvgate::ShvTreeDefinition {{")
+            output.append("pub fn tree_definition() -> shvgate::ShvTreeDefinition {")
             output.append("    let mut nodes_description = std::collections::BTreeMap::new();")
             output.append("")
 
@@ -947,10 +949,10 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
                 output.append(f'    nodes_description.insert(tree::{path_modules}::NODE_PATH.clone(), NodeDescription {{ methods: vec![{meta_methods}] }});')
 
             output.append("")
-            output.append(f"    shvgate::ShvTreeDefinition {{ nodes_description }}")
+            output.append("    shvgate::ShvTreeDefinition { nodes_description }")
             output.append("}")
 
-    return "\n".join(output)
+    return output
 
 
 def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = None, newtype_list_map: bool = False, imports_module: str = 'crate', tree_data: Dict[str, str] = None, nodes_data: Dict[str, NodeDef] = None, generate_client: bool = True, generate_static_tree: bool = True, generate_metamethods: bool = True, generate_shvgate_tree: bool = False) -> str:
@@ -1002,8 +1004,10 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("use bitfield_struct::bitenum;")
     if maps or imaps:
         output.append("use std::collections::BTreeMap;")
+
+    RPCVALUE_IMPORT_LINE = f"use {imports_module}::shvproto::RpcValue;"
     if decimals:
-        output.append(f"use {imports_module}::shvproto::RpcValue;")
+        output.append(RPCVALUE_IMPORT_LINE)
 
     output.append("")
 
@@ -1040,21 +1044,28 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     output.append("")
 
     for bf in bitfields:
-        output.append(f"#[bitfield(u32)]")
-        output.append("#[derive(Clone, Serialize, Deserialize)]")
+        output.append("#[bitfield(u32)]")
+        output.append("#[derive(Serialize, Deserialize)]")
         output.append('#[serde(from = "u32", into = "u32")]')
         bf_name = to_pascal_case(bf.name)
         output.append(f"pub struct {bf_name} {{")
 
         layout = generate_bitfield_layout(bf.fields)
 
+        total_size = 0
+
         for field_name, field_type, start, size in layout:
             if field_name == '_':
-                dummy_name = f"_:_"
+                dummy_name = "_:_"
                 output.append(f"    #[bits({size})] {dummy_name},")
             else:
                 resolved_type = resolve_type(field_type, types, imports_module)
                 output.append(f"    #[bits({size})] pub {to_snake_case(field_name)}: {resolved_type},")
+            total_size = total_size + size
+
+        if total_size != 32:
+            output.append(f"    #[bits({32 - total_size})] _padding: u32,")
+
 
         output.append("}")
         output.append("")
@@ -1109,7 +1120,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     output.append("")
 
     for u in unions:
-        output.append(f"#[derive(Debug, Clone, Serialize, Deserialize)]")
+        output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
         if u.tag:
             output.append(f'#[serde(tag = "{u.tag}")]')
         u_name = to_pascal_case(u.name)
@@ -1129,14 +1140,14 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
     for e in enums:
         output.append("#[bitenum]")
-        output.append("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]")
+        output.append("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]")
         output.append("#[repr(u32)]")
         e_name = to_pascal_case(e.name)
         output.append(f"pub enum {e_name} {{")
         for i, v in enumerate(e.variants):
             v_name = to_pascal_case(v.name)
             if i == 0:
-                output.append(f"    #[default] #[fallback]")
+                output.append("    #[default] #[fallback]")
             if v.value is not None:
                 output.append(f"    {v_name} = {v.value},")
             else:
@@ -1157,16 +1168,16 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append(f"pub struct {name}(i64);")
         output.append("")
         output.append(f"impl {name} {{")
-        output.append(f"    pub fn value(&self) -> i64 {{ self.0 }}")
-        output.append(f"}}")
+        output.append("    pub fn value(&self) -> i64 { self.0 }")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<i64> for {name} {{")
         output.append("    type Error = String;")
         output.append("")
-        output.append(f"    fn try_from(value: i64) -> Result<Self, Self::Error> {{")
+        output.append("    fn try_from(value: i64) -> Result<Self, Self::Error> {")
         output.append(f"        const MIN_VALUE: i64 = {impl_min};")
         output.append(f"        const MAX_VALUE: i64 = {impl_max};")
-        output.append("        if value < MIN_VALUE || value > MAX_VALUE {")
+        output.append("        if !(MIN_VALUE..=MAX_VALUE).contains(&value) {")
         output.append("            return Err(format!(\"Value `{value}` out of range, must be within [{MIN_VALUE}, {MAX_VALUE}]\"));")
         output.append("        }")
         output.append("        Ok(Self(value))")
@@ -1208,16 +1219,16 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append(f"pub struct {name}(f64);")
         output.append("")
         output.append(f"impl {name} {{")
-        output.append(f"    pub fn value(&self) -> f64 {{ self.0 }}")
-        output.append(f"}}")
+        output.append("    pub fn value(&self) -> f64 { self.0 }")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<f64> for {name} {{")
         output.append("    type Error = String;")
         output.append("")
-        output.append(f"    fn try_from(value: f64) -> Result<Self, Self::Error> {{")
+        output.append("    fn try_from(value: f64) -> Result<Self, Self::Error> {")
         output.append(f"        const MIN_VALUE: f64 = {impl_min} as _;")
         output.append(f"        const MAX_VALUE: f64 = {impl_max} as _;")
-        output.append("        if value < MIN_VALUE || value > MAX_VALUE {")
+        output.append("        if !(MIN_VALUE..=MAX_VALUE).contains(&value) {")
         output.append("            return Err(format!(\"Value `{value}` out of range, must be within [{MIN_VALUE}, {MAX_VALUE}]\"));")
         output.append("        }")
         output.append("        Ok(Self(value))")
@@ -1261,7 +1272,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("")
         output.append(f"impl {name} {{")
         output.append(f"    pub fn value(&self) -> {decimal_type} {{ self.0 }}")
-        output.append(f"}}")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<{decimal_type}> for {name} {{")
         output.append("    type Error = String;")
@@ -1270,7 +1281,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("        let v = value.to_f64();")
         output.append(f"        const MIN_VALUE: f64 = {impl_min} as _;")
         output.append(f"        const MAX_VALUE: f64 = {impl_max} as _;")
-        output.append("        if v < MIN_VALUE || v > MAX_VALUE {")
+        output.append("        if !(MIN_VALUE..=MAX_VALUE).contains(&v) {")
         output.append("            return Err(format!(\"Value `{v}` out of range, must be within [{MIN_VALUE}, {MAX_VALUE}]\"));")
         output.append("        }")
         output.append("        Ok(Self(value))")
@@ -1303,25 +1314,29 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         methods_code = generate_methods_code(methods, types, generate_client, imports_module)
         if methods_code:
             output.append("")
-            output.append(methods_code)
+            output.extend(methods_code)
 
     if methods and generate_metamethods:
         metamethods_code = generate_metamethods_code(methods, imports_module)
         if metamethods_code:
             output.append("")
-            output.append(metamethods_code)
+            output.extend(metamethods_code)
 
     if tree_data or nodes_data:
         tree_code = generate_tree_code(tree_data or {}, nodes_data or {}, methods or {}, types, generate_client, generate_shvgate_tree, imports_module)
         if tree_code:
             output.append("")
-            output.append(tree_code)
+            output.extend(tree_code)
 
     if nodes_data and generate_static_tree:
         static_node_code = generate_static_node_code(nodes_data, methods or {}, types, imports_module)
         if static_node_code:
             output.append("")
-            output.append(static_node_code)
+            output.extend(static_node_code)
+
+    if RPCVALUE_IMPORT_LINE in output:
+        idx = output.index(RPCVALUE_IMPORT_LINE)
+        output = output[:idx + 1] + [line for line in output[idx + 1:] if line != RPCVALUE_IMPORT_LINE]
 
     return "\n".join(output)
 

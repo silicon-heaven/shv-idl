@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  python-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pydantic pyyaml
+      - run: python shv_idl_validate.py < example.yaml
+
+  lint-generated-rust:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pydantic pyyaml
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Generate Rust code
+        run: python generator-rust/shv_idl_generate_rust.py --config ci/rust/test_config.yaml < example.yaml > ci/rust/src/generated_api.rs
+      - run: cargo clippy --manifest-path ci/rust/Cargo.toml --all-targets -- -D warnings
+
+  lint-generated-typescript:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pydantic pyyaml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+        working-directory: ci/ts
+      - name: Generate TypeScript code
+        run: python generator-ts/shv_idl_generate_typescript.py --config ci/ts/test_config.yaml < example.yaml > ci/ts/generated.ts
+      - name: oxlint
+        run: npx oxlint generated.ts
+        working-directory: ci/ts
+      - name: eslint
+        run: npx eslint generated.ts
+        working-directory: ci/ts

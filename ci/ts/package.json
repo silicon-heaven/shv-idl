@@ -1,0 +1,21 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^4.0.0",
+    "eslint": "^10.4.0",
+    "eslint-plugin-oxlint": "^1.66.0",
+    "globals": "^17.6.0",
+    "oxlint": "^1.76.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "typescript-eslint": "^8.59.4"
+  },
+  "dependencies": {
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-n": "^18.2.2",
+    "eslint-plugin-unicorn": "^72.0.0",
+    "libshv-js-zod": "^4.1.2",
+    "vue-shv": "^8.0.18"
+  }
+}
