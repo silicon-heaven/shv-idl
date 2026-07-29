@@ -11,12 +11,12 @@ Usage:
   python3 shv_idl_generate_typescript.py --config config.yaml < idl.yaml > generated.ts
 """
 import argparse
-import sys
-import yaml
 import re
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TextIO
 
+import yaml
 
 PRIMITIVE_TS = {
     'Null': 'z.undefined()',

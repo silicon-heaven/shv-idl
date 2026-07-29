@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import sys
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
 import yaml
-from typing import Annotated, Dict, List, Optional, Union, Literal, Any
-from pydantic import BaseModel, Field, model_validator, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
 
 class StructField(BaseModel):
     name: str
@@ -225,7 +227,7 @@ def main():
             sys.exit(1)
 
         data = yaml.safe_load(raw_input)
-        validated = SHVSchema.model_validate(data)
+        SHVSchema.model_validate(data)
         print("Validation Successful")
         sys.exit(0)
 

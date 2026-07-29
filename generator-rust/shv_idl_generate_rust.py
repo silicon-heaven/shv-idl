@@ -2,12 +2,12 @@
 """SHV IDL Parser - Generate Rust code from SHV IDL YAML definition"""
 
 import argparse
-import sys
-import yaml
 import re
+import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, TextIO
+from typing import Dict, List, Optional, TextIO
 
+import yaml
 
 PRIMITIVE_TYPES = {
     'Null': '()',
@@ -521,7 +521,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
         if type_name in types and isinstance(types[type_name], ErrorType):
             error_type = types[type_name]
             resolved = to_pascal_case(type_name)
-            output.append(f"#[repr(u32)]")
+            output.append("#[repr(u32)]")
             output.append(f"pub enum {resolved} {{")
             for i, v in enumerate(error_type.variants):
                 v_name = to_pascal_case(v.name)
@@ -536,7 +536,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
 
             output.append(f"impl From<{resolved}> for RpcError {{")
             output.append(f"    fn from(value: {resolved}) -> Self {{")
-            output.append(f"        match value {{")
+            output.append("        match value {")
             for v in error_type.variants:
                 v_name = to_pascal_case(v.name)
                 output.append(f"            {resolved}::{v_name} => RpcError::new(value as u32, \"{v_name}\"),")
@@ -938,7 +938,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
 
         if paths_with_methods:
             output.append("")
-            output.append(f"pub fn tree_definition() -> shvgate::ShvTreeDefinition {{")
+            output.append("pub fn tree_definition() -> shvgate::ShvTreeDefinition {")
             output.append("    let mut nodes_description = std::collections::BTreeMap::new();")
             output.append("")
 
@@ -948,7 +948,7 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
                 output.append(f'    nodes_description.insert(tree::{path_modules}::NODE_PATH.clone(), NodeDescription {{ methods: vec![{meta_methods}] }});')
 
             output.append("")
-            output.append(f"    shvgate::ShvTreeDefinition {{ nodes_description }}")
+            output.append("    shvgate::ShvTreeDefinition { nodes_description }")
             output.append("}")
 
     return output
@@ -1043,7 +1043,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     output.append("")
 
     for bf in bitfields:
-        output.append(f"#[bitfield(u32)]")
+        output.append("#[bitfield(u32)]")
         output.append("#[derive(Serialize, Deserialize)]")
         output.append('#[serde(from = "u32", into = "u32")]')
         bf_name = to_pascal_case(bf.name)
@@ -1055,7 +1055,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
 
         for field_name, field_type, start, size in layout:
             if field_name == '_':
-                dummy_name = f"_:_"
+                dummy_name = "_:_"
                 output.append(f"    #[bits({size})] {dummy_name},")
             else:
                 resolved_type = resolve_type(field_type, types, imports_module)
@@ -1119,7 +1119,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
     output.append("")
 
     for u in unions:
-        output.append(f"#[derive(Debug, Clone, Serialize, Deserialize)]")
+        output.append("#[derive(Debug, Clone, Serialize, Deserialize)]")
         if u.tag:
             output.append(f'#[serde(tag = "{u.tag}")]')
         u_name = to_pascal_case(u.name)
@@ -1146,7 +1146,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         for i, v in enumerate(e.variants):
             v_name = to_pascal_case(v.name)
             if i == 0:
-                output.append(f"    #[default] #[fallback]")
+                output.append("    #[default] #[fallback]")
             if v.value is not None:
                 output.append(f"    {v_name} = {v.value},")
             else:
@@ -1167,13 +1167,13 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append(f"pub struct {name}(i64);")
         output.append("")
         output.append(f"impl {name} {{")
-        output.append(f"    pub fn value(&self) -> i64 {{ self.0 }}")
-        output.append(f"}}")
+        output.append("    pub fn value(&self) -> i64 { self.0 }")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<i64> for {name} {{")
         output.append("    type Error = String;")
         output.append("")
-        output.append(f"    fn try_from(value: i64) -> Result<Self, Self::Error> {{")
+        output.append("    fn try_from(value: i64) -> Result<Self, Self::Error> {")
         output.append(f"        const MIN_VALUE: i64 = {impl_min};")
         output.append(f"        const MAX_VALUE: i64 = {impl_max};")
         output.append("        if !(MIN_VALUE..=MAX_VALUE).contains(&value) {")
@@ -1218,13 +1218,13 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append(f"pub struct {name}(f64);")
         output.append("")
         output.append(f"impl {name} {{")
-        output.append(f"    pub fn value(&self) -> f64 {{ self.0 }}")
-        output.append(f"}}")
+        output.append("    pub fn value(&self) -> f64 { self.0 }")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<f64> for {name} {{")
         output.append("    type Error = String;")
         output.append("")
-        output.append(f"    fn try_from(value: f64) -> Result<Self, Self::Error> {{")
+        output.append("    fn try_from(value: f64) -> Result<Self, Self::Error> {")
         output.append(f"        const MIN_VALUE: f64 = {impl_min} as _;")
         output.append(f"        const MAX_VALUE: f64 = {impl_max} as _;")
         output.append("        if !(MIN_VALUE..=MAX_VALUE).contains(&value) {")
@@ -1271,7 +1271,7 @@ def generate_rust_code(types: Dict[str, TypeDef], methods: Dict[str, Method] = N
         output.append("")
         output.append(f"impl {name} {{")
         output.append(f"    pub fn value(&self) -> {decimal_type} {{ self.0 }}")
-        output.append(f"}}")
+        output.append("}")
         output.append("")
         output.append(f"impl TryFrom<{decimal_type}> for {name} {{")
         output.append("    type Error = String;")
