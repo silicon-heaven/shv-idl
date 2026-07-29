@@ -528,7 +528,7 @@ def generate_methods_code(methods: Dict[str, Method], types: Dict[str, TypeDef],
                 if v.value is not None:
                     output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {v.value},")
                 elif i == 0:
-                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT + {i},")
+                    output.append(f"    {v_name} = USER_ERROR_CODE_DEFAULT,")
                 else:
                     output.append(f"    {v_name},")
             output.append("}")
