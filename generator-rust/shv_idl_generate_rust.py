@@ -872,7 +872,6 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             result_type = '()'
         param_type = resolve_type(method.param, types, imports_module) if method.param else None
         param_opt_type = resolve_type(method.param_opt, types, imports_module) if method.param_opt else None
-        output.append(f"{'    ' * (depth)}use {imports_module}::api::*;")
         CALL_RPC_METHOD_ERROR = "crate::imports::shvclient::clientapi::CallRpcMethodError"
         error_type = CALL_RPC_METHOD_ERROR
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
