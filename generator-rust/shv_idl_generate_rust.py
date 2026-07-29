@@ -363,7 +363,7 @@ def parse_config(stream) -> tuple:
     return components, imports_module, newtype_list_map
 
 
-def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str = 'crate') -> str:
+def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str = 'crate', **kwargs: int) -> str:
     if type_name in PRIMITIVE_TYPES:
         return PRIMITIVE_TYPES[type_name]
 
@@ -371,7 +371,9 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return f"{imports_module}::{type_name}"
 
     if type_name in types:
-        return f'crate::{to_pascal_case(type_name)}'
+        module_level = kwargs['module_level'] if 'module_level' in kwargs else 0
+        supers = "super::" * module_level
+        return f"{supers}{to_pascal_case(type_name)}"
 
     if type_name == 'Int':
         return 'i64'
@@ -383,7 +385,6 @@ def resolve_type(type_name: str, types: Dict[str, TypeDef], imports_module: str 
         return f"{imports_module}::shvproto::DateTime"
 
     return type_name
-
 
 def generate_bitfield_layout(fields: List[Field]) -> List[tuple]:
     layout = []
@@ -865,14 +866,14 @@ def generate_tree_code(tree_data: Dict[str, str], nodes_data: Dict[str, NodeDef]
             return
         func_name = method.method_name
         if method.result_opt:
-            inner = resolve_type(method.result_opt, types, imports_module)
+            inner = resolve_type(method.result_opt, types, imports_module, module_level=depth)
             result_type = f"Option<{inner}>"
         elif method.result:
-            result_type = resolve_type(method.result, types, imports_module)
+            result_type = resolve_type(method.result, types, imports_module, module_level=depth)
         else:
             result_type = '()'
-        param_type = resolve_type(method.param, types, imports_module) if method.param else None
-        param_opt_type = resolve_type(method.param_opt, types, imports_module) if method.param_opt else None
+        param_type = resolve_type(method.param, types, imports_module, module_level=depth) if method.param else None
+        param_opt_type = resolve_type(method.param_opt, types, imports_module, module_level=depth) if method.param_opt else None
         CALL_RPC_METHOD_ERROR = "crate::imports::shvclient::clientapi::CallRpcMethodError"
         error_type = CALL_RPC_METHOD_ERROR
         if method.error and method.error in types and isinstance(types[method.error], ErrorType):
