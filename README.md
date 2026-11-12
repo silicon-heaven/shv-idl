@@ -44,14 +44,16 @@ SHV IDL is a YAML-based format for defining data types, RPC methods, and device 
 
 ## IDL File Structure
 
-A complete IDL file has up to four top-level keys:
+An IDL file has four top-level keys, all required. Each may be an empty map (e.g. `types: {}` when methods use only primitive types):
 
 ```yaml
 types:    # (required) type definitions
-methods:  # RPC method definitions
-tree:     # flattened path-to-type mappings
-nodes:    # named node definitions (methods + subtree)
+methods:  # (required) RPC method definitions
+tree:     # (required) flattened path-to-type mappings
+nodes:    # (required) named node definitions (methods + subtree)
 ```
+
+Unknown keys are rejected anywhere in the file, so typos such as `maxSiz` or `acces` fail validation.
 
 ## Type System
 
@@ -143,7 +145,7 @@ Union variants have three forms:
 
 ### List
 
-Homogeneous array with an optional `maxSize` constraint:
+Homogeneous array with an optional `maxSize` constraint (must be ≥ 1):
 
 ```yaml
 SampleBuffer:
@@ -190,7 +192,7 @@ Generates `BTreeMap<i32, T>` in Rust.
 
 ### Enum
 
-Integer-based enumeration. Variants can have explicit values or be auto-numbered (starting from 0):
+Integer-based enumeration. Variants can have explicit values (must be ≥ 0) or be auto-numbered (starting from 0):
 
 ```yaml
 # Explicit values
@@ -198,9 +200,9 @@ State:
   type: Enum
   variants:
     - value: 0
-      name: Off
+      name: "Off"        # quoted: bare Off/On/Yes/No are YAML booleans
     - value: 1
-      name: On
+      name: "On"
     - value: 2
       name: Standby
 
@@ -215,7 +217,7 @@ Color:
 
 ### Bitfield
 
-Bit-level field layout over a `u32`. Fields reference bit ranges or single bits. Can reference enum types for multi-bit fields:
+Bit-level field layout over a `u32`. Fields reference bit ranges or single bits. A field's `type`, when given, must name an `Enum` type defined in `types`; fields without a `type` are plain boolean flags:
 
 ```yaml
 StatusRegister:
@@ -247,6 +249,19 @@ ApiError:
     - name: Timeout
 ```
 
+Variants use the same forms as Enum: a record with `name` and an optional `value` (must be ≥ 0), or a plain string:
+
+```yaml
+ValidationError:
+  type: Error
+  variants:
+    - InvalidValue
+    - OutOfRange
+    - MissingField
+```
+
+In Rust, the first variant without an explicit `value` is `USER_ERROR_CODE_DEFAULT`, and later variants without a `value` number up from the previous one. A variant with `value: N` is `USER_ERROR_CODE_DEFAULT + N`.
+
 ### Extern
 
 Placeholder for a type whose definition lives outside the IDL (in Rust code). The generator emits a `use` import for it:
@@ -255,6 +270,8 @@ Placeholder for a type whose definition lives outside the IDL (in Rust code). Th
 CustomType:
   type: Extern
 ```
+
+The validator also accepts optional `import_rust` and `import_ts` string keys on `Extern`, intended to give per-language import paths. The current generators ignore them.
 
 ### Int
 
@@ -352,6 +369,8 @@ Use `param_opt` instead of `param` when the method accepts `Null` as a parameter
 | `ssrv`| `SuperService`    |
 | `dev` | `Developer`       |
 | `su`  | `Superuser`       |
+
+Any other `access` value fails validation.
 
 ## Tree & Node System
 
@@ -474,4 +493,11 @@ print(json.dumps(schema, indent=2))
 "
 ```
 
-This produces a complete structural schema covering all 12 type variants, methods, and nodes. Note that Pydantic's `model_validator` constraints (XOR on `type`/`type_opt` and `values`/`values_opt`) and cross-reference checks are not representable in JSON Schema and are omitted.
+This produces a complete structural schema covering all 13 type variants, methods, and nodes. Unknown keys are rejected (`additionalProperties: false`). Pydantic's `model_validator` constraints are not representable in JSON Schema and are omitted. These are:
+
+- exactly one of `type`/`type_opt` on Struct fields, and `optional` only together with `type`
+- exactly one of `values`/`values_opt` on Map and IMap
+- `param`/`param_opt` and `result`/`result_opt` are mutually exclusive on methods
+- cross-reference checks (referenced types, methods, and nodes must exist; Bitfield field types must be Enums)
+
+Run `python3 shv_idl_validate.py < file.yaml` for full validation.

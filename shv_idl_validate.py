@@ -4,52 +4,62 @@ import sys
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
-class StructField(BaseModel):
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+
+AccessLevel = Literal["bws", "rd", "wr", "cmd", "cfg", "srv", "ssrv", "dev", "su"]
+
+
+class StructField(StrictModel):
     name: str
     type: Optional[str] = None
     type_opt: Optional[str] = None
+    optional: Optional[bool] = None
 
     @model_validator(mode='after')
     def check_xor(self):
         if (self.type is None) == (self.type_opt is None):
             raise ValueError("Exactly one of 'type' or 'type_opt' must be provided")
+        if self.optional is not None and self.type_opt is not None:
+            raise ValueError("'optional' can only be combined with 'type', not 'type_opt'")
         return self
 
-class UnionVariant(BaseModel):
+class UnionVariant(StrictModel):
     name: str
     type: Optional[str] = None
 
-class BitfieldField(BaseModel):
+class BitfieldField(StrictModel):
     name: str
     type: Optional[str] = None
     bits: Union[int, List[int]]
 
-class EnumVariant(BaseModel):
+class EnumVariant(StrictModel):
     name: str
     value: Optional[int] = Field(None, ge=0)
 
-class Struct(BaseModel):
+class Struct(StrictModel):
     type: Literal["Struct"]
     fields: List[StructField]
 
-class TupleType(BaseModel):
+class TupleType(StrictModel):
     type: Literal["Tuple"]
     fields: List[str]
 
-class UnionType(BaseModel):
+class UnionType(StrictModel):
     type: Literal["Union"]
     tag: Optional[str] = None
     variants: List[Union[str, UnionVariant]]
 
-class ListType(BaseModel):
+class ListType(StrictModel):
     type: Literal["List"]
     values: str
     maxSize: Optional[int] = Field(None, ge=1)
 
-class MapType(BaseModel):
+class MapType(StrictModel):
     type: Literal["Map"]
     values: Optional[str] = None
     values_opt: Optional[str] = None
@@ -60,7 +70,7 @@ class MapType(BaseModel):
             raise ValueError("Exactly one of 'values' or 'values_opt' must be provided")
         return self
 
-class IMapType(BaseModel):
+class IMapType(StrictModel):
     type: Literal["IMap"]
     values: Optional[str] = None
     values_opt: Optional[str] = None
@@ -71,39 +81,39 @@ class IMapType(BaseModel):
             raise ValueError("Exactly one of 'values' or 'values_opt' must be provided")
         return self
 
-class Bitfield(BaseModel):
+class Bitfield(StrictModel):
     type: Literal["Bitfield"]
     fields: List[BitfieldField]
 
-class EnumType(BaseModel):
+class EnumType(StrictModel):
     type: Literal["Enum"]
     variants: List[Union[str, EnumVariant]]
 
-class ErrorType(BaseModel):
+class ErrorType(StrictModel):
     type: Literal["Error"]
     variants: List[Union[str, EnumVariant]]
 
-class IntType(BaseModel):
+class IntType(StrictModel):
     type: Literal["Int"]
     min: Optional[int] = None
     max: Optional[int] = None
 
-class DoubleType(BaseModel):
+class DoubleType(StrictModel):
     type: Literal["Double"]
     min: Optional[float] = None
     max: Optional[float] = None
 
-class DecimalType(BaseModel):
+class DecimalType(StrictModel):
     type: Literal["Decimal"]
     min: Optional[float] = None
     max: Optional[float] = None
 
-class Extern(BaseModel):
+class Extern(StrictModel):
     type: Literal["Extern"]
     import_rust: Optional[str] = None
     import_ts: Optional[str] = None
 
-class Method(BaseModel):
+class Method(StrictModel):
     name: str
     path_pattern: Optional[str] = None
     param: Optional[str] = None
@@ -111,7 +121,7 @@ class Method(BaseModel):
     result: Optional[str] = None
     result_opt: Optional[str] = None
     error: Optional[str] = None
-    access: Optional[str] = None
+    access: Optional[AccessLevel] = None
     isGetter: Optional[bool] = None
     userIdRequired: Optional[bool] = None
     signals: Optional[Dict[str, Any]] = None
@@ -129,7 +139,7 @@ class Method(BaseModel):
             raise ValueError("'param' and 'param_opt' are mutually exclusive")
         return self
 
-class NodeDef(BaseModel):
+class NodeDef(StrictModel):
     methods: Optional[List[str]] = None
     tree: Optional[Dict[str, str]] = None
 
@@ -138,11 +148,11 @@ BasicType = Annotated[
     Field(discriminator='type')
 ]
 
-class SHVSchema(BaseModel):
+class SHVSchema(StrictModel):
     types: Dict[str, BasicType]
-    methods: Optional[Dict[str, Method]] = None
-    tree: Optional[Dict[str, str]] = None
-    nodes: Optional[Dict[str, NodeDef]] = None
+    methods: Dict[str, Method]
+    tree: Dict[str, str]
+    nodes: Dict[str, NodeDef]
 
     @model_validator(mode='after')
     def validate_cross_references(self) -> 'SHVSchema':
@@ -205,17 +215,16 @@ class SHVSchema(BaseModel):
             for nname, node in self.nodes.items():
                 if node.methods:
                     for mid in node.methods:
-                        if self.methods and mid not in self.methods:
+                        if mid not in self.methods:
                             raise ValueError(f"Node '{nname}' references unknown method '{mid}'")
                 if node.tree:
                     for path, child in node.tree.items():
                         if child not in self.nodes:
                             raise ValueError(f"Node '{nname}' tree child '{path}' references unknown node '{child}'")
 
-        if self.tree and self.nodes:
-            for path, node_name in self.tree.items():
-                if node_name not in self.nodes:
-                    raise ValueError(f"Tree entry '{path}' references unknown node '{node_name}'")
+        for path, node_name in self.tree.items():
+            if node_name not in self.nodes:
+                raise ValueError(f"Tree entry '{path}' references unknown node '{node_name}'")
 
         return self
 
